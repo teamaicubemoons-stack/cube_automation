@@ -1,0 +1,20 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+body {
+  @apply bg-dark text-white font-sans;
+  background: radial-gradient(circle at top right, #1e1b4b, #0f172a);
+  min-height: 100vh;
+}
+
+.glass {
+  @apply bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl;
+}
+
+.btn-primary {
+  @apply bg-gradient-to-r from-primary to-secondary px-6 py-2 rounded-lg font-semibold hover:opacity-90 transition-all active:scale-95;
+}
+
+.input-field {
+  @apply bg-white/10 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:border-primary transition-all;
+}
