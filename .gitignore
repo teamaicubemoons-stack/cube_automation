@@ -64,3 +64,10 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Sensitive Credentials
+backend/service_account.json
+
+# Test files and local data
+test_contacts.csv
+

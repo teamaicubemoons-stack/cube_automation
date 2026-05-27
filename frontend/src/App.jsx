@@ -15,6 +15,26 @@ function App() {
   const [emailSubject, setEmailSubject] = useState('Important Update');
   const [emailBody, setEmailBody] = useState('Hi {name},\n\nWe have an update for you.');
   const [mapping, setMapping] = useState({});
+  const [spreadsheetId, setSpreadsheetId] = useState('1R3tBUcQKzMXpjpBJpCkiOeWZwukGGjtKPM9K5OyRJ0');
+  const [campaignId, setCampaignId] = useState(null);
+  const [campaignResults, setCampaignResults] = useState([]);
+
+  useEffect(() => {
+    let interval;
+    if (campaignId) {
+      interval = setInterval(async () => {
+        try {
+          const response = await axios.get(`${API_BASE_URL}/campaign/${campaignId}/status`);
+          setCampaignResults(response.data);
+          
+          // Optional: Stop polling if all tasks are done (needs extra logic)
+        } catch (error) {
+          console.error("Status polling failed", error);
+        }
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [campaignId]);
 
   const handleFileUpload = async (e) => {
     const selectedFile = e.target.files[0];
@@ -38,9 +58,15 @@ function App() {
   };
 
   const handleStartCampaign = async () => {
+    if (!spreadsheetId) {
+      alert("Please enter a Google Sheet ID first.");
+      return;
+    }
     setIsStarting(true);
+    setCampaignResults([]); // Clear old results
     const formData = new FormData();
     formData.append('platform', platform);
+    formData.append('spreadsheet_id', spreadsheetId);
     formData.append('whatsapp_message', whatsappMsg);
     formData.append('email_subject', emailSubject);
     formData.append('email_body', emailBody);
@@ -48,6 +74,7 @@ function App() {
 
     try {
       const response = await axios.post(`${API_BASE_URL}/start-campaign`, formData);
+      setCampaignId(response.data.campaign_id);
       alert(response.data.message);
     } catch (error) {
       console.error("Campaign start failed", error);
@@ -56,6 +83,7 @@ function App() {
       setIsStarting(false);
     }
   };
+
 
   const handleRewrite = async (type) => {
     try {
@@ -94,22 +122,37 @@ function App() {
             <h2 className="text-2xl font-bold">1. Data Source</h2>
           </div>
 
-          <div className="relative border-2 border-dashed border-white/10 rounded-2xl p-10 text-center hover:border-primary transition-all group cursor-pointer">
-            <input 
-              type="file" 
-              onChange={handleFileUpload}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-            />
-            <div className="space-y-4">
-              <div className="mx-auto w-16 h-16 bg-white/5 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                {isUploading ? <Loader2 className="animate-spin text-primary" /> : <Upload className="text-gray-400" />}
-              </div>
-              <div>
-                <p className="text-lg font-medium">{file ? file.name : "Click to upload CSV or Excel"}</p>
-                <p className="text-sm text-gray-500">AI will automatically detect columns</p>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-300">Google Sheet ID</label>
+              <input 
+                type="text" 
+                value={spreadsheetId}
+                onChange={(e) => setSpreadsheetId(e.target.value)}
+                className="w-full input-field"
+                placeholder="Enter Spreadsheet ID (from URL)"
+              />
+              <p className="text-[10px] text-gray-500 italic">Example: 1R3tBUcQKzMXpjpBJpCkiOeWZwukGGjtKPM9K5OyRJ0</p>
+            </div>
+
+            <div className="relative border-2 border-dashed border-white/10 rounded-2xl p-10 text-center hover:border-primary transition-all group cursor-pointer">
+              <input 
+                type="file" 
+                onChange={handleFileUpload}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+              <div className="space-y-4">
+                <div className="mx-auto w-16 h-16 bg-white/5 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  {isUploading ? <Loader2 className="animate-spin text-primary" /> : <Upload className="text-gray-400" />}
+                </div>
+                <div>
+                  <p className="text-lg font-medium">{file ? file.name : "Click to upload CSV or Excel"}</p>
+                  <p className="text-sm text-gray-500">AI will automatically detect columns</p>
+                </div>
               </div>
             </div>
           </div>
+
 
           <AnimatePresence>
             {uploadData && (
@@ -201,11 +244,12 @@ function App() {
 
           <button 
             onClick={handleStartCampaign}
-            disabled={isStarting || !uploadData}
-            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${!uploadData ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'btn-primary shadow-xl shadow-primary/20'}`}
+            disabled={isStarting || (!uploadData && !spreadsheetId)}
+            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${(!uploadData && !spreadsheetId) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'btn-primary shadow-xl shadow-primary/20'}`}
           >
             {isStarting ? <Loader2 className="animate-spin" /> : <><Send size={18} /> Launch Campaign</>}
           </button>
+
         </section>
       </div>
 
@@ -216,30 +260,68 @@ function App() {
             <div className="p-3 bg-accent/20 rounded-xl">
               <CheckCircle className="text-accent" />
             </div>
-            <h2 className="text-2xl font-bold">Campaign Status (Live from Sheets)</h2>
+            <h2 className="text-2xl font-bold">Campaign Logs (2s Delay Active)</h2>
           </div>
-          <div className="text-sm text-gray-500 italic">Queue delay: 30 seconds between messages</div>
+          <div className="text-sm text-gray-500 italic">Campaign ID: {campaignId || 'No active campaign'}</div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="p-6 bg-white/5 rounded-2xl border border-white/5">
-            <p className="text-gray-400 text-sm mb-1">Total Contacts</p>
-            <p className="text-3xl font-bold text-white">---</p>
-          </div>
-          <div className="p-6 bg-white/5 rounded-2xl border border-white/5">
-            <p className="text-gray-400 text-sm mb-1 text-primary">Processed</p>
-            <p className="text-3xl font-bold text-white">---</p>
-          </div>
-          <div className="p-6 bg-white/5 rounded-2xl border border-white/5">
-            <p className="text-gray-400 text-sm mb-1 text-green-400">Success</p>
-            <p className="text-3xl font-bold text-white">---</p>
-          </div>
-          <div className="p-6 bg-white/5 rounded-2xl border border-white/5">
-            <p className="text-gray-400 text-sm mb-1 text-red-400">Failed</p>
-            <p className="text-3xl font-bold text-white">---</p>
-          </div>
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/5">
+                <th className="p-4 text-xs font-semibold uppercase tracking-wider text-gray-400">Recipient</th>
+                <th className="p-4 text-xs font-semibold uppercase tracking-wider text-gray-400">Platform</th>
+                <th className="p-4 text-xs font-semibold uppercase tracking-wider text-gray-400">Contact</th>
+                <th className="p-4 text-xs font-semibold uppercase tracking-wider text-gray-400 text-center">Status</th>
+                <th className="p-4 text-xs font-semibold uppercase tracking-wider text-gray-400">Reason/Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {campaignResults.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="p-12 text-center text-gray-500 italic">
+                    Waiting for campaign to start...
+                  </td>
+                </tr>
+              ) : (
+                campaignResults.map((result, idx) => (
+                  <motion.tr 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    key={idx} 
+                    className="hover:bg-white/5 transition-colors"
+                  >
+                    <td className="p-4 font-medium">{result.name}</td>
+                    <td className="p-4">
+                      <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${result.type === 'WhatsApp' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {result.type}
+                      </span>
+                    </td>
+                    <td className="p-4 text-sm text-gray-400">{result.phone || result.email}</td>
+                    <td className="p-4 text-center">
+                      {result.status === 'Sent' ? (
+                        <div className="flex items-center justify-center text-green-400 gap-1">
+                          <CheckCircle size={16} />
+                          <span className="text-xs font-bold">Success</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center text-red-400 gap-1">
+                          <AlertCircle size={16} />
+                          <span className="text-xs font-bold">Failed</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4 text-xs text-gray-500 max-w-xs truncate">
+                      {result.reason || "Delivered successfully"}
+                    </td>
+                  </motion.tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
+
     </div>
   );
 }
