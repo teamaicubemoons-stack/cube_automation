@@ -3,7 +3,7 @@ import httpx
 import json
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 AISENSY_API_KEY = os.getenv("WHATSAPP_API_KEY")
 CAMPAIGN_NAME = os.getenv("WHATSAPP_CAMPAIGN_NAME")

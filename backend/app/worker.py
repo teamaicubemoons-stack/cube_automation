@@ -6,7 +6,7 @@ from app.services.whatsapp_service import send_whatsapp_message
 from app.services.email_service import send_email
 from app.services.sheet_service import update_row_status
 
-load_dotenv()
+load_dotenv(override=True)
 
 celery = Celery(
     'tasks',

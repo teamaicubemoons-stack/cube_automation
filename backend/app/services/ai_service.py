@@ -3,7 +3,7 @@ import json
 import openai
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 async def detect_columns(columns: list, sample_rows: list):
