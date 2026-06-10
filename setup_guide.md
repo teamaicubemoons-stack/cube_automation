@@ -96,3 +96,16 @@ Instead of PostgreSQL, we use Google Sheets for data storage.
 
 *   **API Quotas:** Be mindful of Google Sheets API rate limits (usually 60 requests per minute).
 *   **30-Second Delay:** Still mandatory to keep messaging accounts safe.
+
+---
+
+## 🔍 Testing Email Open Tracking Locally
+
+Email opens are tracked via a 1x1 transparent tracking pixel embedded in the email body. 
+To manually test and update a recipient's mail status to **"Seen"** locally, you can open the following URL format in your web browser (or send a GET request):
+
+```text
+http://localhost:8000/api/campaign/track-open?campaign_id=CAM001(20-25)&email=harshdewangan1472@gmail.com
+```
+
+This will trigger the tracking endpoint, update the status to "Seen" in-memory, and synchronize the update directly to the Google Sheet logs under the `Logs Data` tab.

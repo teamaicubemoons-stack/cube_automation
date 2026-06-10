@@ -151,10 +151,15 @@ async def get_next_campaign_id(spreadsheet_id: str) -> str:
     
     # Find the last campaign ID
     last_id = campaign_ids[-1]
-    try:
-        num = int(last_id.replace("CAM", ""))
-        next_num = num + 1
-    except ValueError:
+    import re
+    match = re.match(r"CAM(\d+)", last_id)
+    if match:
+        try:
+            num = int(match.group(1))
+            next_num = num + 1
+        except ValueError:
+            next_num = len(campaign_ids) + 1
+    else:
         next_num = len(campaign_ids) + 1
         
     return f"CAM{next_num:03d}"
