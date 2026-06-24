@@ -1,4 +1,5 @@
 import os
+import asyncio
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
@@ -19,32 +20,35 @@ def get_sheets_service():
     service = build('sheets', 'v4', credentials=creds)
     return service.spreadsheets()
 
+async def _execute(request):
+    return await asyncio.to_thread(request.execute)
+
 async def read_sheet_data(spreadsheet_id: str):
     """Reads all data from the spreadsheet."""
     service = get_sheets_service()
     
     # Get first sheet name dynamically
-    spreadsheet = service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
     sheet_name = spreadsheet.get('sheets', [])[0].get('properties', {}).get('title', 'Sheet1')
     
-    result = service.values().get(
+    result = await _execute(service.values().get(
         spreadsheetId=spreadsheet_id,
         range=f"{sheet_name}!A:Z"
-    ).execute()
+    ))
     return result.get('values', [])
 
 async def update_row_status(spreadsheet_id: str, row_index: int, status: str, reason: str = ""):
     """Updates the status and reason columns for a specific row dynamically based on headers."""
     service = get_sheets_service()
     
-    spreadsheet = service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
     sheet_name = spreadsheet.get('sheets', [])[0].get('properties', {}).get('title', 'Sheet1')
     
     # Read headers to find Status and Reason columns
-    result = service.values().get(
+    result = await _execute(service.values().get(
         spreadsheetId=spreadsheet_id,
         range=f"{sheet_name}!A1:Z1"
-    ).execute()
+    ))
     headers = result.get('values', [])
     headers = headers[0] if headers else []
     
@@ -79,19 +83,19 @@ async def update_row_status(spreadsheet_id: str, row_index: int, status: str, re
         
     body = {'values': values}
     
-    service.values().update(
+    await _execute(service.values().update(
         spreadsheetId=spreadsheet_id,
         range=range_name,
         valueInputOption="RAW",
         body=body
-    ).execute()
+    ))
 
 async def ensure_headers(spreadsheet_id: str):
     """Checks if 'Status' and 'Reason' headers exist, adds them if not, and expands grid."""
     service = get_sheets_service()
     
     # Get metadata
-    spreadsheet = service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
     sheet = spreadsheet.get('sheets', [])[0]
     sheet_id = sheet.get('properties', {}).get('sheetId', 0)
     sheet_name = sheet.get('properties', {}).get('title', 'Sheet1')
@@ -104,7 +108,7 @@ async def ensure_headers(spreadsheet_id: str):
     # If columns G (7) and H (8) don't exist in grid, add them
     if current_cols < 8:
         print(f"DEBUG: Expanding sheet columns from {current_cols} to 8...")
-        service.batchUpdate(
+        await _execute(service.batchUpdate(
             spreadsheetId=spreadsheet_id,
             body={
                 "requests": [{
@@ -115,29 +119,27 @@ async def ensure_headers(spreadsheet_id: str):
                     }
                 }]
             }
-        ).execute()
+        ))
 
     if "Status" not in headers:
         print("DEBUG: Adding 'Status' and 'Reason' headers...")
         new_headers = headers + ["Status", "Reason"]
-        service.values().update(
+        await _execute(service.values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!A1",
             valueInputOption="RAW",
             body={'values': [new_headers]}
-        ).execute()
-
-
+        ))
 
 async def get_next_campaign_id(spreadsheet_id: str) -> str:
     """Reads the first column of Logs Data sheet to calculate the next CAM### ID."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
     try:
-        result = service.values().get(
+        result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
             range="Logs Data!A:A"
-        ).execute()
+        ))
         values = result.get('values', [])
     except Exception as e:
         print(f"DEBUG: Error reading Logs Data sheet for Campaign ID: {e}")
@@ -165,20 +167,20 @@ async def get_next_campaign_id(spreadsheet_id: str) -> str:
     return f"CAM{next_num:03d}"
 
 async def ensure_logs_sheet_headers(spreadsheet_id: str):
-    """Ensures headers are present in the Logs Data sheet (7-column layout)."""
+    """Ensures headers are present in the Logs Data sheet (8-column layout)."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     try:
         service = get_sheets_service()
         
         # Get sheet metadata and titles
-        spreadsheet = service.get(spreadsheetId=spreadsheet_id).execute()
+        spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
         sheets = spreadsheet.get('sheets', [])
         sheet_titles = [s.get('properties', {}).get('title') for s in sheets]
         
         # Create 'Logs Data' sheet if it doesn't exist
         if "Logs Data" not in sheet_titles:
             print("DEBUG: 'Logs Data' sheet tab not found. Creating it...")
-            service.batchUpdate(
+            await _execute(service.batchUpdate(
                 spreadsheetId=spreadsheet_id,
                 body={
                     "requests": [{
@@ -189,28 +191,28 @@ async def ensure_logs_sheet_headers(spreadsheet_id: str):
                         }
                     }]
                 }
-            ).execute()
+            ))
             print("DEBUG: 'Logs Data' sheet tab created successfully.")
             
         try:
-            result = service.values().get(
+            result = await _execute(service.values().get(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A1:G1"
-            ).execute()
+                range="Logs Data!A1:H1"
+            ))
             headers = result.get('values', [])
         except Exception:
             headers = []
             
-        expected_headers = ["Campaign ID", "Platform", "Recipient Name", "WhatsApp Number", "Email", "Timestamp", "Details"]
+        expected_headers = ["Campaign ID", "Platform", "Recipient Name", "WhatsApp Number", "Email", "Timestamp", "Details", "Generate By"]
         
         if not headers or not headers[0]:
             print("DEBUG: Creating headers in Logs Data sheet...")
-            service.values().update(
+            await _execute(service.values().update(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A1:G1",
+                range="Logs Data!A1:H1",
                 valueInputOption="RAW",
                 body={'values': [expected_headers]}
-            ).execute()
+            ))
     except Exception as e:
         print(f"DEBUG: Logs sheet is inaccessible: {e}")
 
@@ -222,25 +224,26 @@ async def append_campaign_log(
     phone: str,
     email: str,
     status: str,
-    details: str
+    details: str,
+    generated_by: str = ""
 ):
-    """Appends a campaign log entry to the Logs Data sheet (7-column layout)."""
+    """Appends a campaign log entry to the Logs Data sheet (8-column layout)."""
     from datetime import datetime
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
     timestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     
     log_details = f"{status}: {details}" if details else status
-    row_data = [campaign_id, platform, name, phone or "", email or "", timestamp, log_details]
+    row_data = [campaign_id, platform, name, phone or "", email or "", timestamp, log_details, generated_by]
     
     try:
-        service.values().append(
+        await _execute(service.values().append(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:G",
+            range="Logs Data!A:H",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [row_data]}
-        ).execute()
+        ))
         print(f"DEBUG: Appended log row for {name} ({platform}) to Logs Data sheet")
     except Exception as e:
         print(f"DEBUG: Failed to append campaign log to Logs Data sheet: {e}")
@@ -250,10 +253,10 @@ async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, s
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
     try:
-        result = service.values().get(
+        result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
             range="Logs Data!A:E"
-        ).execute()
+        ))
         rows = result.get('values', [])
     except Exception as e:
         print(f"DEBUG: Error reading Logs Data sheet for status update: {e}")
@@ -272,11 +275,90 @@ async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, s
                 # Column G is index 6 (Details column)
                 range_name = f"Logs Data!G{row_num}"
                 body = {'values': [[details]]}
-                service.values().update(
+                await _execute(service.values().update(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
                     valueInputOption="RAW",
                     body=body
-                ).execute()
+                ))
                 print(f"DEBUG: Updated Logs Data sheet row {row_num} status to {status}")
                 break
+
+async def read_users_data(spreadsheet_id: str = None) -> list:
+    """Reads all data from the Users sheet tab. If empty, populates a default admin user."""
+    spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
+    if not spreadsheet_id:
+        return []
+    service = get_sheets_service()
+    
+    # 1. First, make sure the Users sheet tab exists
+    try:
+        spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
+        sheets = spreadsheet.get('sheets', [])
+        sheet_titles = [s.get('properties', {}).get('title') for s in sheets]
+        if "Users" not in sheet_titles:
+            print("DEBUG: 'Users' sheet tab not found. Creating it...")
+            await _execute(service.batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={
+                    "requests": [{
+                        "addSheet": {
+                            "properties": {
+                                "title": "Users"
+                            }
+                        }
+                    }]
+                }
+            ))
+            # Set headers
+            expected_headers = ["ID", "User Name", "Password", "Role"]
+            await _execute(service.values().update(
+                spreadsheetId=spreadsheet_id,
+                range="Users!A1:D1",
+                valueInputOption="RAW",
+                body={'values': [expected_headers]}
+            ))
+    except Exception as e:
+        print(f"DEBUG: Failed to verify/create Users sheet tab: {e}")
+        
+    try:
+        result = await _execute(service.values().get(
+            spreadsheetId=spreadsheet_id,
+            range="Users!A:D"
+        ))
+        values = result.get('values', [])
+        
+        # If no users or only header exists, add a default admin user
+        if not values or len(values) <= 1:
+            print("DEBUG: Users sheet is empty. Appending default user 'Admin'/'admin123'...")
+            default_headers = ["ID", "User Name", "Password", "Role"]
+            default_user = ["CUB001", "Admin", "admin123", "Admin"]
+            
+            # If values is completely empty, write headers first
+            if not values:
+                await _execute(service.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range="Users!A1:D1",
+                    valueInputOption="RAW",
+                    body={'values': [default_headers]}
+                ))
+                
+            await _execute(service.values().append(
+                spreadsheetId=spreadsheet_id,
+                range="Users!A:D",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [default_user]}
+            ))
+            
+            # Re-read to get updated values
+            result = await _execute(service.values().get(
+                spreadsheetId=spreadsheet_id,
+                range="Users!A:D"
+            ))
+            values = result.get('values', [])
+            
+        return values
+    except Exception as e:
+        print(f"DEBUG: Error reading Users sheet: {e}")
+        return []

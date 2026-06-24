@@ -9,7 +9,16 @@ load_dotenv(override=True)
 app = FastAPI(title="AI Bulk Messaging System")
 
 # CORS Configuration
-origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+origins = [
+    "http://api.automation.cubemoons.com/",
+    "http://automation.cubemoons.com/",
+    "http://localhost:5173", 
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175"
+]
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
     origins.append(frontend_url.rstrip("/"))
@@ -19,6 +28,7 @@ if frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
