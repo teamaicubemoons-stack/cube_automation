@@ -3,7 +3,8 @@ import axios from 'axios';
 import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+//const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = "http://api.automation.cubemoons.com/api"; // Production Backend URL 
 
 const formatExactDate = (dateStr) => {
   if (!dateStr || dateStr.toLowerCase().includes("pending")) return "Pending";
