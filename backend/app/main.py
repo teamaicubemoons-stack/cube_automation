@@ -10,8 +10,10 @@ app = FastAPI(title="AI Bulk Messaging System")
 
 # CORS Configuration
 origins = [
-    "http://api.automation.cubemoons.com/",
-    "http://automation.cubemoons.com/",
+    "https://api.automation.cubemoons.com",
+    "https://automation.cubemoons.com",
+    "http://api.automation.cubemoons.com",
+    "http://automation.cubemoons.com",
     "http://localhost:5173", 
     "http://127.0.0.1:5173",
     "http://localhost:5174",

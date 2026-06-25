@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8000/api'
-  : 'http://api.automation.cubemoons.com/api';
+  : 'https://api.automation.cubemoons.com/api';
 
 const formatExactDate = (dateStr) => {
   if (!dateStr || dateStr.toLowerCase().includes("pending")) return "Pending";
