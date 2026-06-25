@@ -3,8 +3,9 @@ import axios from 'axios';
 import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-//const API_BASE_URL = 'http://localhost:8000/api';
-const API_BASE_URL = "http://api.automation.cubemoons.com/api"; // Production Backend URL 
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8000/api'
+  : 'http://api.automation.cubemoons.com/api';
 
 const formatExactDate = (dateStr) => {
   if (!dateStr || dateStr.toLowerCase().includes("pending")) return "Pending";
@@ -916,11 +917,7 @@ function App() {
         <div ref={profileMenuRef} className="relative">
           <button
             onClick={() => {
-              if (user && user.role === 'Admin') {
-                setCurrentView('users');
-              } else {
-                setShowProfileMenu(!showProfileMenu);
-              }
+              setShowProfileMenu(!showProfileMenu);
             }}
             className="flex items-center gap-2 group cursor-pointer focus:outline-none bg-slate-50/60 hover:bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-100/80 transition-all"
             title="User Profile"
@@ -935,7 +932,7 @@ function App() {
             </span>
           </button>
 
-          {/* Small Dropdown Menu for Logout / Admin Panel */}
+          {/* Small Dropdown Menu for Logout */}
           <AnimatePresence>
             {showProfileMenu && (
               <motion.div
@@ -945,21 +942,6 @@ function App() {
                 transition={{ duration: 0.15, ease: "easeOut" }}
                 className="absolute right-0 mt-2 w-36 bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-xl shadow-xl p-1 z-50 origin-top-right"
               >
-                {user.role === 'Admin' && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setCurrentView('users');
-                        setShowProfileMenu(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer text-left rounded-lg"
-                    >
-                      <User size={14} />
-                      <span>Manage Users</span>
-                    </button>
-                    <div className="h-px bg-slate-100 my-1" />
-                  </>
-                )}
                 <button
                   onClick={() => {
                     handleLogout();
