@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import httpx
 from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, Form, Request, Response, HTTPException, Depends, Header
 from fastapi.responses import StreamingResponse
@@ -43,41 +44,81 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
 
 @router.post("/login")
 async def login(req: LoginRequest):
-    users_data = await read_users_data(None)
-    if not users_data or len(users_data) <= 1:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication failed: Users spreadsheet tab is empty or missing."
-        )
-    
-    headers = [str(h).strip().lower() for h in users_data[0]]
+    # Authenticate using the external SQL login API on api.cubicalos.com
     try:
-        username_idx = headers.index("user name")
-        password_idx = headers.index("password")
-        role_idx = headers.index("role") if "role" in headers else -1
-    except ValueError:
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Error: Users sheet is missing 'User Name' or 'Password' columns."
-        )
-        
-    for row in users_data[1:]:
-        if len(row) > max(username_idx, password_idx):
-            username_val = str(row[username_idx]).strip()
-            password_val = str(row[password_idx]).strip()
-            if username_val.lower() == req.username.strip().lower() and password_val == req.password.strip():
-                # Correct credentials!
-                role_val = "User"
-                if role_idx != -1 and len(row) > role_idx:
-                    role_val = str(row[role_idx]).strip()
-                token = str(uuid.uuid4())
-                ACTIVE_SESSIONS[token] = {"username": username_val, "role": role_val}
-                return {"token": token, "username": username_val, "role": role_val}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.cubicalos.com/api/auth/login",
+                json={
+                    "user_id": req.username.strip(),
+                    "password": req.password.strip()
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=8.0
+            )
+            
+        if response.status_code == 200:
+            res_data = response.json()
+            if res_data.get("status") is True:
+                # Successfully logged in via external database!
+                # Extract access token, username and role from response
+                token = res_data.get("access_token") or str(uuid.uuid4())
                 
-    raise HTTPException(
-        status_code=401,
-        detail="Authentication failed: Invalid User Name or Password."
-    )
+                user_obj = res_data.get("user") or {}
+                username_val = user_obj.get("name") or req.username.strip()
+                
+                ext_roles = res_data.get("roles") or []
+                role_val = "User"
+                if ext_roles:
+                    first_role_name = ext_roles[0].get("name", "User")
+                    # Map any role containing "admin" to "Admin" for frontend compatibility
+                    if "admin" in first_role_name.lower():
+                        role_val = "Admin"
+                    else:
+                        role_val = first_role_name
+                
+                # Save session in our active sessions
+                ACTIVE_SESSIONS[token] = {"username": username_val, "role": role_val}
+                
+                return {
+                    "token": token,
+                    "username": username_val,
+                    "role": role_val
+                }
+            else:
+                # API returned status = False (incorrect credentials)
+                error_msg = res_data.get("message") or "Invalid User Name or Password."
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Authentication failed: {error_msg}"
+                )
+        elif response.status_code == 401 or response.status_code == 400:
+            # Unauthorized or Bad Request
+            try:
+                res_data = response.json()
+                error_msg = res_data.get("message") or "Invalid User Name or Password."
+            except Exception:
+                error_msg = "Invalid User Name or Password."
+            raise HTTPException(
+                status_code=401,
+                detail=f"Authentication failed: {error_msg}"
+            )
+        else:
+            # Server error from external API
+            raise HTTPException(
+                status_code=502,
+                detail="External authentication service returned an error."
+            )
+            
+    except HTTPException:
+        # Re-raise HTTPExceptions directly
+        raise
+    except Exception as e:
+        print(f"DEBUG: External login connection failed or timed out: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is currently offline or unreachable."
+        )
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
@@ -705,7 +746,7 @@ async def export_campaign_logs(campaign_id: str, spreadsheet_id: str = None, cur
             "Contact Address": item.get("phone") or item.get("email") or "",
             "Date": item.get("sent_time", ""),
             "Status": item.get("status", ""),
-            "Details": item.get("reason", ""),
+            "Reason": item.get("reason", ""),
             "Generated By": item.get("generated_by", "")
         })
         
