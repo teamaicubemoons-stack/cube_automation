@@ -16,6 +16,7 @@ from app.services.sheet_service import (
     ensure_logs_sheet_headers,
     append_campaign_log,
     update_log_status,
+    update_unsubscribe_status,
     read_users_data
 )
 
@@ -61,64 +62,88 @@ async def login(req: LoginRequest):
             res_data = response.json()
             if res_data.get("status") is True:
                 # Successfully logged in via external database!
-                # Extract access token, username and role from response
                 token = res_data.get("access_token") or str(uuid.uuid4())
-                
                 user_obj = res_data.get("user") or {}
                 username_val = user_obj.get("name") or req.username.strip()
-                
                 ext_roles = res_data.get("roles") or []
                 role_val = "User"
                 if ext_roles:
                     first_role_name = ext_roles[0].get("name", "User")
-                    # Map any role containing "admin" to "Admin" for frontend compatibility
                     if "admin" in first_role_name.lower():
                         role_val = "Admin"
                     else:
                         role_val = first_role_name
                 
-                # Save session in our active sessions
                 ACTIVE_SESSIONS[token] = {"username": username_val, "role": role_val}
-                
                 return {
                     "token": token,
                     "username": username_val,
                     "role": role_val
                 }
             else:
-                # API returned status = False (incorrect credentials)
+                # Try fallback first before failing
+                user_session = await _attempt_sheet_login_fallback(req.username, req.password)
+                if user_session:
+                    return user_session
                 error_msg = res_data.get("message") or "Invalid User Name or Password."
                 raise HTTPException(
                     status_code=401,
                     detail=f"Authentication failed: {error_msg}"
                 )
-        elif response.status_code == 401 or response.status_code == 400:
-            # Unauthorized or Bad Request
-            try:
-                res_data = response.json()
-                error_msg = res_data.get("message") or "Invalid User Name or Password."
-            except Exception:
-                error_msg = "Invalid User Name or Password."
-            raise HTTPException(
-                status_code=401,
-                detail=f"Authentication failed: {error_msg}"
-            )
         else:
-            # Server error from external API
+            # Try fallback first
+            user_session = await _attempt_sheet_login_fallback(req.username, req.password)
+            if user_session:
+                return user_session
             raise HTTPException(
                 status_code=502,
                 detail="External authentication service returned an error."
             )
             
     except HTTPException:
-        # Re-raise HTTPExceptions directly
         raise
     except Exception as e:
-        print(f"DEBUG: External login connection failed or timed out: {e}")
+        print(f"DEBUG: External login connection failed: {e}. Trying local sheet fallback...")
+        user_session = await _attempt_sheet_login_fallback(req.username, req.password)
+        if user_session:
+            return user_session
         raise HTTPException(
             status_code=503,
             detail="Authentication service is currently offline or unreachable."
         )
+
+async def _attempt_sheet_login_fallback(username: str, password: str):
+    try:
+        from app.services.sheet_service import read_users_data
+        users_data = await read_users_data()
+        if users_data and len(users_data) > 1:
+            headers = [h.strip().lower() for h in users_data[0]]
+            try:
+                user_idx = headers.index("user name")
+                pass_idx = headers.index("password")
+                role_idx = headers.index("role")
+            except ValueError:
+                user_idx, pass_idx, role_idx = 1, 2, 3
+            
+            for row in users_data[1:]:
+                if len(row) > max(user_idx, pass_idx):
+                    sheet_user = row[user_idx].strip()
+                    sheet_pass = row[pass_idx].strip()
+                    sheet_role = row[role_idx].strip() if len(row) > role_idx else "User"
+                    
+                    if sheet_user.lower() == username.strip().lower() and sheet_pass == password.strip():
+                        token = str(uuid.uuid4())
+                        role_val = "Admin" if "admin" in sheet_role.lower() else "User"
+                        ACTIVE_SESSIONS[token] = {"username": sheet_user, "role": role_val}
+                        print(f"DEBUG: Local sheet login fallback SUCCESS for user: {sheet_user}")
+                        return {
+                            "token": token,
+                            "username": sheet_user,
+                            "role": role_val
+                        }
+    except Exception as sheet_err:
+        print(f"DEBUG: Local sheet login fallback error: {sheet_err}")
+    return None
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
@@ -177,10 +202,43 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
     email_idx = get_idx('email', 'Email')
     name_idx = get_idx('name', 'Name')
 
+    # Detect Company Name column — use AI mapping first, then keyword fallback
+    company_idx = get_idx('company', 'Company Name')
+    if company_idx == -1:
+        # Extended keyword fallback for common column names
+        company_candidates = ["company", "organization", "org", "firm", "business", "employer"]
+        for i, h in enumerate(headers):
+            if str(h).strip().lower() in company_candidates:
+                company_idx = i
+                break
+
+    # Detect S NO column index for preserving original row numbers
+    sno_idx = -1
+    sno_candidates = ["s no", "s.no", "sno", "serial number", "sr no", "sr.no", "serialno", "s_no"]
+    for i, h in enumerate(headers):
+        if str(h).strip().lower() in sno_candidates:
+            sno_idx = i
+            break
+
+    # Determine the public frontend URL for the unsubscribe page
+    frontend_origin = os.getenv("FRONTEND_URL", "").rstrip("/")
+    if not frontend_origin:
+        backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
+        if backend_url:
+            # Derive the frontend origin (strip /api if present)
+            frontend_origin = backend_url.replace("api.", "").replace("/api", "")
+        else:
+            frontend_origin = base_url.rstrip("/")
+
     for i, row in enumerate(rows):
         row_index = i + 1
         name = row[name_idx] if (name_idx != -1 and name_idx < len(row)) else "Customer"
+        company_name = row[company_idx] if (company_idx != -1 and company_idx < len(row)) else ""
+        original_sno = str(row[sno_idx]).strip() if (sno_idx != -1 and sno_idx < len(row)) else str(row_index)
         print(f"-> [{i+1}/{len(rows)}] Processing: {name}")
+
+        # Formatted timestamp for in-memory results
+        sent_ts = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
         # WhatsApp
         if platform in ["whatsapp", "both"]:
@@ -205,21 +263,27 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
 
             reason_str = f"{result['status']}: {result.get('reason')}" if result.get('reason') else result['status']
             campaign_manager[campaign_id]["results"].append({
-                "name": name, 
-                "phone": clean_phone, 
-                "type": "WhatsApp", 
-                "status": result['status'], 
+                "campaign_id": campaign_id,
+                "name": name,
+                "company": company_name,
+                "sno": original_sno,
+                "phone": clean_phone,
+                "type": "WhatsApp",
+                "status": result['status'],
                 "reason": reason_str,
                 "row_index": row_index,
-                "sent_time": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
-                "generated_by": generated_by
+                "sent_time": sent_ts,
+                "generated_by": generated_by,
+                "subscription": "Yes",
+                "unsub_reason": "",
+                "unsub_other": ""
             })
-            
+
             if result['status'] == "Sent":
                 print(f"   WhatsApp: {result['status']}")
             else:
                 print(f"   WhatsApp Failed: {result.get('reason', 'Unknown reason')}")
-            
+
             await append_campaign_log(
                 spreadsheet_id=spreadsheet_id,
                 campaign_id=campaign_id,
@@ -229,7 +293,8 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                 email="",
                 status=result['status'],
                 details=result.get('reason', ''),
-                generated_by=generated_by
+                generated_by=generated_by,
+                company_name=company_name
             )
 
         # Email
@@ -246,29 +311,52 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                 else:
                     body = (email_body or "").replace("{name}", name)
                     tracking_url = f"{base_url}api/campaign/track-open?campaign_id={campaign_id}&email={email}"
+                    # Build unsubscribe URL pointing to the frontend unsubscribe page
+                    import urllib.parse
+                    unsub_base_url = os.getenv("UNSUBSCRIBE_PAGE_URL", "https://unsubscribe.cubemoons.com/index.html")
+                    if not unsub_base_url.startswith("http://") and not unsub_base_url.startswith("https://"):
+                        unsub_base_url = f"{frontend_origin}/unsubscribe/index.html"
+                    
+                    unsubscribe_url = (
+                        f"{unsub_base_url}"
+                        f"?email={urllib.parse.quote(email)}"
+                        f"&campaign_id={urllib.parse.quote(campaign_id)}"
+                    )
                     try:
-                        result = await send_email(email, email_subject or "Update", body, tracking_url=tracking_url)
+                        result = await send_email(
+                            email,
+                            email_subject or "Update",
+                            body,
+                            tracking_url=tracking_url,
+                            unsubscribe_url=unsubscribe_url
+                        )
                     except Exception as e:
                         print(f"   Email Error: {e}")
                         result = {"status": "Failed", "reason": str(e)}
 
             reason_str = f"{result['status']}: {result.get('reason')}" if result.get('reason') else result['status']
             campaign_manager[campaign_id]["results"].append({
-                "name": name, 
-                "email": email, 
-                "type": "Email", 
-                "status": result['status'], 
+                "campaign_id": campaign_id,
+                "name": name,
+                "company": company_name,
+                "sno": original_sno,
+                "email": email,
+                "type": "Email",
+                "status": result['status'],
                 "reason": reason_str,
                 "row_index": row_index,
-                "sent_time": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
-                "generated_by": generated_by
+                "sent_time": sent_ts,
+                "generated_by": generated_by,
+                "subscription": "Yes",
+                "unsub_reason": "",
+                "unsub_other": ""
             })
-            
+
             if result['status'] == "Sent":
                 print(f"   Email: {result['status']}")
             else:
                 print(f"   Email Failed: {result.get('reason', 'Unknown reason')}")
-                
+
             await append_campaign_log(
                 spreadsheet_id=spreadsheet_id,
                 campaign_id=campaign_id,
@@ -278,7 +366,8 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                 email=email,
                 status=result['status'],
                 details=result.get('reason', ''),
-                generated_by=generated_by
+                generated_by=generated_by,
+                company_name=company_name
             )
 
         await asyncio.sleep(2)
@@ -541,13 +630,15 @@ async def get_emails_sent_today(spreadsheet_id: str = None, current_user: dict =
             
             is_admin = current_user.get("role") == "Admin"
             for row in rows:
-                if len(row) >= 8 and row[0].startswith("CAM") and (is_admin or row[7] == current_user["username"]):
-                    if row[1] == "Email" and len(row) > 5:
+                # 12-col layout: [0]=CampaignID [1]=Platform [2]=Name [3]=Company
+                # [4]=Phone [5]=Email [6]=Timestamp [7]=Details [8]=GenerateBy
+                if len(row) >= 9 and row[0].startswith("CAM") and (is_admin or row[8] == current_user["username"]):
+                    if row[1] == "Email" and len(row) > 6:
                         try:
-                            row_date = datetime.strptime(str(row[5]).strip(), "%Y-%m-%d %I:%M:%S %p")
+                            row_date = datetime.strptime(str(row[6]).strip(), "%Y-%m-%d %I:%M:%S %p")
                             if now - row_date < timedelta(hours=24):
                                 campaign_id = row[0]
-                                email = row[4]
+                                email = row[5]
                                 sheet_counted_contacts.add((campaign_id, email))
                         except Exception:
                             continue
@@ -576,33 +667,78 @@ async def get_emails_sent_today(spreadsheet_id: str = None, current_user: dict =
 
 @router.get("/campaigns")
 async def list_campaigns(spreadsheet_id: str = None, current_user: dict = Depends(get_current_user)):
-    """Returns a sorted list of unique campaign IDs created by the current user."""
+    """Returns a sorted list of unique campaign IDs and their dates created by the current user."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
-    campaigns = set()
+    campaign_map = {}
     is_admin = current_user.get("role") == "Admin"
-    # Filter active in-memory campaigns
+    
+    # 1. Filter active in-memory campaigns
     for campaign_id, campaign in campaign_manager.items():
         if is_admin or campaign.get("metadata", {}).get("created_by") == current_user["username"]:
-            campaigns.add(campaign_id)
+            earliest_date = ""
+            for res in campaign.get("results", []):
+                if res.get("sent_time"):
+                    raw_ts = res.get("sent_time")
+                    parsed_date = raw_ts
+                    date_formats = [
+                        "%Y-%m-%d %I:%M:%S %p",
+                        "%Y-%m-%d %H:%M:%S",
+                        "%d %B %Y",
+                        "%d %B %Y, %I:%M%p",
+                        "%d %B %Y, %I:%M %p"
+                    ]
+                    for date_fmt in date_formats:
+                        try:
+                            dt = datetime.strptime(raw_ts.strip(), date_fmt)
+                            parsed_date = f"{dt.day} {dt.strftime('%B %Y')}"
+                            break
+                        except ValueError:
+                            continue
+                    earliest_date = parsed_date
+                    break
+            campaign_map[campaign_id] = earliest_date
             
+    # 2. Filter historical campaigns from sheet
     if spreadsheet_id:
         try:
             from app.services.sheet_service import get_sheets_service
             service = get_sheets_service()
             result = await asyncio.to_thread(service.values().get(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A:H"
+                range="Logs Data!A:L"
             ).execute)
             values = result.get('values', [])
             for row in values:
-                if len(row) >= 8 and row[0].startswith("CAM"):
-                    row_generated_by = row[7]
+                if len(row) >= 2 and row[0].startswith("CAM"):
+                    row_generated_by = row[8] if len(row) > 8 else "System"
                     if is_admin or row_generated_by == current_user["username"]:
-                        campaigns.add(row[0])
+                        campaign_id = row[0]
+                        timestamp_val = row[6] if len(row) > 6 else ""
+                        if timestamp_val and campaign_id not in campaign_map:
+                            raw_ts = timestamp_val.strip()
+                            parsed_date = raw_ts
+                            date_formats = [
+                                "%Y-%m-%d %I:%M:%S %p",
+                                "%Y-%m-%d %H:%M:%S",
+                                "%d %B %Y",
+                                "%d %B %Y, %I:%M%p",
+                                "%d %B %Y, %I:%M %p"
+                            ]
+                            for date_fmt in date_formats:
+                                try:
+                                    dt = datetime.strptime(raw_ts, date_fmt)
+                                    parsed_date = f"{dt.day} {dt.strftime('%B %Y')}"
+                                    break
+                                except ValueError:
+                                    continue
+                            campaign_map[campaign_id] = parsed_date
+                        elif campaign_id not in campaign_map:
+                            campaign_map[campaign_id] = ""
         except Exception as e:
             print(f"DEBUG: Logs sheet is inaccessible for listing campaigns: {e}")
             
-    return sorted(list(campaigns), reverse=True)
+    sorted_ids = sorted(list(campaign_map.keys()), reverse=True)
+    return [{"id": cid, "date": campaign_map[cid]} for cid in sorted_ids]
 
 
 @router.get("/campaign/all/status")
@@ -633,7 +769,7 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                 service = get_sheets_service()
                 result = await asyncio.to_thread(service.values().get(
                     spreadsheetId=spreadsheet_id,
-                    range="Logs Data!A:H"
+                    range="Logs Data!A:L"
                 ).execute)
                 rows = result.get('values', [])
                 SHEETS_LOGS_CACHE[spreadsheet_id] = {
@@ -642,11 +778,18 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                 }
             
             for row in rows:
-                if len(row) >= 8 and row[0].startswith("CAM"):
-                    row_generated_by = row[7]
+                if len(row) >= 2 and row[0].startswith("CAM"):
+                    row_generated_by = row[8] if len(row) > 8 else "System"
                     if is_admin or row_generated_by == current_user["username"]:
                         if row[0] not in loaded_campaigns:
-                            details_val = row[6] if len(row) > 6 else ""
+                            platform_val = row[1] if len(row) > 1 else "Email"
+                            name_val = row[2] if len(row) > 2 else ""
+                            company_val = row[3] if len(row) > 3 else ""
+                            phone_val = row[4] if len(row) > 4 else ""
+                            email_val = row[5] if len(row) > 5 else ""
+                            sent_time_val = row[6] if len(row) > 6 else ""
+                            details_val = row[7] if len(row) > 7 else ""
+                            
                             status_val = "Sent"
                             if "Seen" in details_val:
                                 status_val = "Seen"
@@ -654,14 +797,19 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                                 status_val = "Failed"
                                 
                             all_results.append({
-                                "name": row[2],
-                                "phone": row[3] if row[1] == "WhatsApp" else None,
-                                "email": row[4] if row[1] == "Email" else None,
-                                "type": row[1],
+                                "campaign_id": row[0],
+                                "name": name_val,
+                                "company": company_val,
+                                "phone": phone_val if platform_val == "WhatsApp" else None,
+                                "email": email_val if platform_val == "Email" else None,
+                                "type": platform_val,
                                 "status": status_val,
                                 "reason": details_val,
-                                "sent_time": row[5] if len(row) > 5 else "",
-                                "generated_by": row_generated_by
+                                "sent_time": sent_time_val,
+                                "generated_by": row_generated_by,
+                                "subscription": row[9] if len(row) > 9 else "Yes",
+                                "unsub_reason": row[10] if len(row) > 10 else "",
+                                "unsub_other": row[11] if len(row) > 11 else ""
                             })
         except Exception as e:
             print(f"DEBUG: Logs sheet is inaccessible for all campaign status polling: {e}")
@@ -693,7 +841,7 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                 service = get_sheets_service()
                 result = await asyncio.to_thread(service.values().get(
                     spreadsheetId=spreadsheet_id,
-                    range="Logs Data!A:H"
+                    range="Logs Data!A:L"
                 ).execute)
                 rows = result.get('values', [])
                 SHEETS_LOGS_CACHE[spreadsheet_id] = {
@@ -703,10 +851,17 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
             
             results = []
             for row in rows:
-                if len(row) >= 8 and row[0] == campaign_id:
-                    row_generated_by = row[7]
+                if len(row) >= 2 and row[0] == campaign_id:
+                    row_generated_by = row[8] if len(row) > 8 else "System"
                     if is_admin or row_generated_by == current_user["username"]:
-                        details_val = row[6] if len(row) > 6 else ""
+                        platform_val = row[1] if len(row) > 1 else "Email"
+                        name_val = row[2] if len(row) > 2 else ""
+                        company_val = row[3] if len(row) > 3 else ""
+                        phone_val = row[4] if len(row) > 4 else ""
+                        email_val = row[5] if len(row) > 5 else ""
+                        sent_time_val = row[6] if len(row) > 6 else ""
+                        details_val = row[7] if len(row) > 7 else ""
+                        
                         status_val = "Sent"
                         if "Seen" in details_val:
                             status_val = "Seen"
@@ -714,14 +869,19 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                             status_val = "Failed"
                             
                         results.append({
-                            "name": row[2],
-                            "phone": row[3] if row[1] == "WhatsApp" else None,
-                            "email": row[4] if row[1] == "Email" else None,
-                            "type": row[1],
+                            "campaign_id": row[0],
+                            "name": name_val,
+                            "company": company_val,
+                            "phone": phone_val if platform_val == "WhatsApp" else None,
+                            "email": email_val if platform_val == "Email" else None,
+                            "type": platform_val,
                             "status": status_val,
                             "reason": details_val,
-                            "sent_time": row[5] if len(row) > 5 else "",
-                            "generated_by": row_generated_by
+                            "sent_time": sent_time_val,
+                            "generated_by": row_generated_by,
+                            "subscription": row[9] if len(row) > 9 else "Yes",
+                            "unsub_reason": row[10] if len(row) > 10 else "",
+                            "unsub_other": row[11] if len(row) > 11 else ""
                         })
             return results
         except Exception as e:
@@ -738,16 +898,59 @@ async def export_campaign_logs(campaign_id: str, spreadsheet_id: str = None, cur
     if not results:
         raise HTTPException(status_code=404, detail=f"No logs found for campaign {campaign_id}")
         
+    # Parse starting SNO from campaign ID if present (e.g. CAM002(89-91))
+    import re
+    start_sno = None
+    range_match = re.search(r"\((\d+)-(\d+)\)", campaign_id)
+    if range_match:
+        try:
+            start_sno = int(range_match.group(1))
+        except ValueError:
+            pass
+
     export_data = []
-    for item in results:
+    for idx, item in enumerate(results, start=1):
+        # Use original SNO from results if available, otherwise calculate from campaign ID range
+        sno_val = item.get("sno")
+        if not sno_val:
+            if start_sno is not None:
+                sno_val = str(start_sno + idx - 1)
+            else:
+                sno_val = str(idx)
+        
+        # Parse and format the Date column to "DD/MM/YYYY Time"
+        raw_date = item.get("sent_time", "")
+        formatted_date = raw_date
+        if raw_date:
+            # Common formats to try
+            date_formats = [
+                "%Y-%m-%d %I:%M:%S %p",
+                "%Y-%m-%d %H:%M:%S",
+                "%d %B %Y, %I:%M%p",
+                "%d %B %Y, %H:%M",
+                "%d %B %Y, %I:%M %p"
+            ]
+            for date_fmt in date_formats:
+                try:
+                    dt = datetime.strptime(raw_date.strip(), date_fmt)
+                    formatted_date = dt.strftime("%d/%m/%Y %I:%M:%S %p")
+                    break
+                except ValueError:
+                    continue
+
         export_data.append({
-            "Recipient Name": item.get("name", ""),
-            "Platform": item.get("type", ""),
-            "Contact Address": item.get("phone") or item.get("email") or "",
-            "Date": item.get("sent_time", ""),
+            "SNO": sno_val,
+            "Campaign ID": campaign_id,
+            "Date": formatted_date,
+            "Name": item.get("name", ""),
+            "Email": item.get("email") or "",
+            "Phone": item.get("phone") or "",
             "Status": item.get("status", ""),
-            "Reason": item.get("reason", ""),
-            "Generated By": item.get("generated_by", "")
+            "Detail": item.get("reason", ""),
+            "Sent By": item.get("generated_by", ""),
+            "Subscription (Yes / No)": item.get("subscription", "Yes"),
+            "Unsubscribe Reason": item.get("unsub_reason", ""),
+            "If Other (Reason)": item.get("unsub_other", "")
         })
         
     df = pd.DataFrame(export_data)
@@ -835,6 +1038,34 @@ async def track_open(campaign_id: str, email: str):
     )
 
 
+
+class UnsubscribeRequest(BaseModel):
+    email: str
+    campaign_id: str = ""
+    reason: str = ""
+    other_reason: str = ""
+
+@router.post("/campaign/unsubscribe")
+async def handle_unsubscribe(req: UnsubscribeRequest):
+    """Handles unsubscribe requests from the unsubscribe page. No auth required."""
+    print(f"DEBUG: Unsubscribe request received for email={req.email}, campaign_id={req.campaign_id}, reason={req.reason}")
+    try:
+        updated = await update_unsubscribe_status(
+            spreadsheet_id=None,  # reads from LOGS_SPREADSHEET_ID env var
+            email=req.email,
+            campaign_id=req.campaign_id,
+            reason=req.reason,
+            other_reason=req.other_reason
+        )
+        if updated:
+            return {"success": True, "message": "Unsubscribed successfully."}
+        else:
+            # Email not found in logs — still succeed for UX, just log it
+            print(f"DEBUG: Email {req.email} not found in Logs Data sheet for unsubscribe update.")
+            return {"success": True, "message": "Unsubscribed. (No matching log entry found to update.)"}
+    except Exception as e:
+        print(f"DEBUG: Unsubscribe handler error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process unsubscribe request.")
 
 @router.post("/rewrite")
 async def ai_rewrite(message: str = Form(...), tone: str = Form("professional"), current_user: dict = Depends(get_current_user)):

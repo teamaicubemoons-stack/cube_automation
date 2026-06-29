@@ -167,7 +167,7 @@ async def get_next_campaign_id(spreadsheet_id: str) -> str:
     return f"CAM{next_num:03d}"
 
 async def ensure_logs_sheet_headers(spreadsheet_id: str):
-    """Ensures headers are present in the Logs Data sheet (8-column layout)."""
+    """Ensures headers are present in the Logs Data sheet (12-column layout)."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     try:
         service = get_sheets_service()
@@ -197,22 +197,46 @@ async def ensure_logs_sheet_headers(spreadsheet_id: str):
         try:
             result = await _execute(service.values().get(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A1:H1"
+                range="Logs Data!A1:L1"
             ))
             headers = result.get('values', [])
         except Exception:
             headers = []
             
-        expected_headers = ["Campaign ID", "Platform", "Recipient Name", "WhatsApp Number", "Email", "Timestamp", "Details", "Generate By"]
+        # 12-column layout:
+        # A: Campaign ID, B: Platform, C: Recipient Name, D: Company Name,
+        # E: WhatsApp Number, F: Email, G: Timestamp, H: Details, I: Generate By,
+        # J: Subscription (Yes / No), K: Unsubscribe Reason, L: If Other (Reason)
+        expected_headers = [
+            "Campaign ID", "Platform", "Recipient Name", "Company Name",
+            "WhatsApp Number", "Email", "Timestamp", "Details", "Generate By",
+            "Subscription (Yes / No)", "Unsubscribe Reason", "If Other (Reason)"
+        ]
         
         if not headers or not headers[0]:
             print("DEBUG: Creating headers in Logs Data sheet...")
             await _execute(service.values().update(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A1:H1",
+                range="Logs Data!A1:L1",
                 valueInputOption="RAW",
                 body={'values': [expected_headers]}
             ))
+        elif len(headers[0]) < 12:
+            # Extend existing headers with new columns if they don't exist
+            existing = headers[0]
+            new_cols = []
+            for col in expected_headers[len(existing):]:
+                new_cols.append(col)
+            if new_cols:
+                col_letter_start = chr(ord('A') + len(existing))
+                col_letter_end = chr(ord('A') + len(expected_headers) - 1)
+                print(f"DEBUG: Extending Logs Data headers with new columns: {new_cols}")
+                await _execute(service.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"Logs Data!{col_letter_start}1:{col_letter_end}1",
+                    valueInputOption="RAW",
+                    body={'values': [new_cols]}
+                ))
     except Exception as e:
         print(f"DEBUG: Logs sheet is inaccessible: {e}")
 
@@ -225,21 +249,30 @@ async def append_campaign_log(
     email: str,
     status: str,
     details: str,
-    generated_by: str = ""
+    generated_by: str = "",
+    company_name: str = ""
 ):
-    """Appends a campaign log entry to the Logs Data sheet (8-column layout)."""
+    """Appends a campaign log entry to the Logs Data sheet (12-column layout)."""
     from datetime import datetime
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
-    timestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    # Format: "27 June 2026, 03:23PM"  (cross-platform: strip leading zero from day)
+    _now = datetime.now()
+    timestamp = f"{_now.day} {_now.strftime('%B %Y, %I:%M%p')}"
     
     log_details = f"{status}: {details}" if details else status
-    row_data = [campaign_id, platform, name, phone or "", email or "", timestamp, log_details, generated_by]
+    # 12 columns: Campaign ID, Platform, Recipient Name, Company Name, WhatsApp Number,
+    # Email, Timestamp, Details, Generate By, Subscription (Yes/No), Unsubscribe Reason, If Other (Reason)
+    row_data = [
+        campaign_id, platform, name, company_name or "",
+        phone or "", email or "", timestamp, log_details, generated_by,
+        "Yes", "", ""   # Default subscription = Yes (not yet unsubscribed)
+    ]
     
     try:
         await _execute(service.values().append(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:H",
+            range="Logs Data!A:L",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [row_data]}
@@ -249,13 +282,13 @@ async def append_campaign_log(
         print(f"DEBUG: Failed to append campaign log to Logs Data sheet: {e}")
 
 async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, status: str, details: str):
-    """Updates the details column for a specific campaign ID and email in Logs Data (7-column layout)."""
+    """Updates the details column for a specific campaign ID and email in Logs Data."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
     try:
         result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:E"
+            range="Logs Data!A:F"
         ))
         rows = result.get('values', [])
     except Exception as e:
@@ -265,15 +298,15 @@ async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, s
     for idx, row in enumerate(rows):
         if idx == 0:
             continue
-        if len(row) >= 5:
+        if len(row) >= 6:
             row_campaign_id = row[0]
             row_platform = row[1]
-            row_email = row[4]
+            row_email = row[5]  # Column F is now email (index 5) after Company Name shift
             
             if row_campaign_id == campaign_id and row_platform == "Email" and row_email == email:
                 row_num = idx + 1
-                # Column G is index 6 (Details column)
-                range_name = f"Logs Data!G{row_num}"
+                # Column H is index 7 (Details column)
+                range_name = f"Logs Data!H{row_num}"
                 body = {'values': [[details]]}
                 await _execute(service.values().update(
                     spreadsheetId=spreadsheet_id,
@@ -283,6 +316,61 @@ async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, s
                 ))
                 print(f"DEBUG: Updated Logs Data sheet row {row_num} status to {status}")
                 break
+
+async def update_unsubscribe_status(
+    spreadsheet_id: str,
+    email: str,
+    campaign_id: str,
+    reason: str,
+    other_reason: str = ""
+):
+    """
+    Updates the Unsubscribe columns (J, K, L) in Logs Data sheet for a given email+campaign.
+    J = Subscription (Yes / No) → set to "No"
+    K = Unsubscribe Reason → reason text
+    L = If Other (Reason) → other_reason if reason is Others
+    """
+    spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
+    service = get_sheets_service()
+    try:
+        result = await _execute(service.values().get(
+            spreadsheetId=spreadsheet_id,
+            range="Logs Data!A:F"
+        ))
+        rows = result.get('values', [])
+    except Exception as e:
+        print(f"DEBUG: Error reading Logs Data sheet for unsubscribe update: {e}")
+        return False
+
+    updated = False
+    for idx, row in enumerate(rows):
+        if idx == 0:
+            continue  # Skip header
+        if len(row) >= 6:
+            row_campaign_id = row[0]
+            row_platform = row[1]
+            row_email = row[5]  # Column F = Email
+
+            # Match on email; optionally also campaign_id if provided
+            email_match = row_email == email
+            campaign_match = (not campaign_id) or (row_campaign_id == campaign_id)
+
+            if email_match and campaign_match and row_platform == "Email":
+                row_num = idx + 1
+                # Columns J, K, L = indices 9, 10, 11 → letters J, K, L
+                range_name = f"Logs Data!J{row_num}:L{row_num}"
+                body = {'values': [["No", reason, other_reason]]}
+                await _execute(service.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name,
+                    valueInputOption="RAW",
+                    body=body
+                ))
+                print(f"DEBUG: Updated unsubscribe status for {email} at row {row_num}")
+                updated = True
+                # Don't break — update all rows for this email/campaign (multiple sends possible)
+
+    return updated
 
 async def read_users_data(spreadsheet_id: str = None) -> list:
     """Reads all data from the Users sheet tab. If empty, populates a default admin user."""

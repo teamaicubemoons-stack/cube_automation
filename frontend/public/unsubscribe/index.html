@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unsubscribe | AI Bulk Messaging</title>
+  <meta name="description" content="Unsubscribe from our mailing list. We respect your inbox.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --secondary: #0ea5e9;
+      --accent: #8b5cf6;
+      --text-dark: #0f172a;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --bg-gradient:
+        radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.07) 0%, transparent 45%),
+        radial-gradient(circle at 20% 80%, rgba(14, 165, 233, 0.07) 0%, transparent 45%),
+        linear-gradient(135deg, #ffffff 0%, #f0f7ff 50%, #e0f2fe 100%);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-gradient);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      color: var(--text-dark);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Glassmorphism Card */
+    .card {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      border-radius: 24px;
+      box-shadow:
+        0 20px 40px -8px rgba(148, 163, 184, 0.3),
+        0 8px 16px -4px rgba(148, 163, 184, 0.2);
+      width: 100%;
+      max-width: 620px;
+      padding: 44px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Top decorative bar */
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
+      border-radius: 24px 24px 0 0;
+    }
+
+    /* Branding badge */
+    .brand-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: rgba(37, 99, 235, 0.08);
+      border: 1px solid rgba(37, 99, 235, 0.18);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .brand-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--secondary);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .header-section {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .email-display {
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--primary);
+      display: block;
+      word-break: break-all;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+
+    .subscribed-text {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 400;
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+      margin: 26px 0;
+      border: none;
+    }
+
+    /* Gradient title matching main app */
+    .page-title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 10px;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle-text {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      text-align: center;
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .field-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    /* Dropdown */
+    .dropdown-container { position: relative; }
+
+    .select-field {
+      width: 100%;
+      padding: 13px 44px 13px 16px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.95rem;
+      color: var(--text-dark);
+      background-color: #ffffff;
+      border: 1.5px solid var(--border-color);
+      border-radius: 14px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .select-field:focus {
+      border-color: rgba(37, 99, 235, 0.55);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .dropdown-container::after {
+      content: "";
+      position: absolute;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-width: 6px 5px 0 5px;
+      border-style: solid;
+      border-color: #94a3b8 transparent transparent transparent;
+      pointer-events: none;
+    }
+
+    /* Others textarea */
+    .reason-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      display: none;
+    }
+    .textarea-field {
+      width: 100%;
+      height: 110px;
+      padding: 13px 16px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.95rem;
+      color: var(--text-dark);
+      background-color: #ffffff;
+      border: 1.5px solid var(--border-color);
+      border-radius: 14px;
+      outline: none;
+      resize: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .textarea-field:focus {
+      border-color: rgba(37, 99, 235, 0.55);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .others-container {
+      display: none;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .others-container.show {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Submit Button */
+    .btn-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 12px;
+    }
+    .btn-submit {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 48px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 20px -4px rgba(37, 99, 235, 0.35);
+      transition: all 0.22s ease;
+      letter-spacing: 0.01em;
+    }
+    .btn-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px -4px rgba(37, 99, 235, 0.45);
+    }
+    .btn-submit:active:not(:disabled) {
+      transform: translateY(0);
+      box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.3);
+    }
+    .btn-submit:disabled {
+      background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Error state */
+    .error-box {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: #dc2626;
+      font-size: 0.88rem;
+      font-weight: 500;
+      text-align: center;
+      margin-top: 12px;
+    }
+
+    /* Success State */
+    .success-container {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: fadeInUp 0.5s ease forwards;
+    }
+    .success-icon-wrapper {
+      width: 76px;
+      height: 76px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(14, 165, 233, 0.1));
+      border: 2px solid rgba(37, 99, 235, 0.2);
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 24px;
+      color: var(--primary);
+    }
+    .success-icon { width: 36px; height: 36px; }
+    .success-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 14px;
+    }
+    .success-message {
+      font-size: 1rem;
+      line-height: 1.7;
+      color: var(--text-muted);
+      font-weight: 400;
+      max-width: 440px;
+    }
+
+    /* Animations */
+    .fade-out { animation: fadeOutUp 0.38s ease forwards; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeOutUp {
+      from { opacity: 1; transform: translateY(0); }
+      to   { opacity: 0; transform: translateY(-12px); }
+    }
+
+    /* Footer */
+    .page-footer {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 11px;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+
+    @media (max-width: 480px) {
+      .card { padding: 32px 22px; }
+      .page-title { font-size: 1.35rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card" id="card-container">
+
+    <!-- ── Form State ─────────────────────────────────── -->
+    <div id="form-container">
+      <div class="header-section">
+        <!-- <div style="display:flex;justify-content:center;margin-bottom:16px;">
+          <span class="brand-badge">
+            <span class="dot"></span>
+            AI Bulk Messaging
+          </span>
+        </div> -->
+        <span class="email-display" id="email-display">Loading...</span>
+        <span class="subscribed-text">is currently subscribed to our newsletters.</span>
+      </div>
+
+      <hr class="divider">
+
+      <h1 class="page-title">Unsubscribe from our newsletters</h1>
+      <p class="subtitle-text">To help us improve, we'd appreciate knowing your reason:</p>
+
+      <form id="unsubscribe-form" onsubmit="handleUnsubscribe(event)">
+
+        <div class="form-group">
+          <label class="field-label" for="unsubscribe-reason">Reason for unsubscribing</label>
+          <div class="dropdown-container">
+            <select class="select-field" id="unsubscribe-reason" onchange="checkReason(this)" required>
+              <option value="" disabled selected>Please select a reason</option>
+              <option value="Your emails are not relevant to me">Your emails are not relevant to me</option>
+              <option value="Your emails are too frequent">Your emails are too frequent</option>
+              <option value="I don't remember signing up for this">I don't remember signing up for this</option>
+              <option value="I no longer want to receive these emails">I no longer want to receive these emails</option>
+              <option value="The emails are spam">The emails are spam and should be reported</option>
+              <option value="Others">Others</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group others-container" id="others-container">
+          <label class="reason-label" id="reason-label" for="others-reason">Write your reason below</label>
+          <textarea class="textarea-field" id="others-reason" placeholder="Tell us more about why you're unsubscribing..."></textarea>
+        </div>
+
+        <div class="btn-container">
+          <button type="submit" class="btn-submit" id="submit-btn" disabled>Unsubscribe</button>
+        </div>
+
+        <div class="error-box" id="error-box">
+          Something went wrong. Please try again or contact support.
+        </div>
+
+      </form>
+    </div>
+
+    <!-- ── Success State ───────────────────────────────── -->
+    <div class="success-container" id="success-container">
+      <div class="success-icon-wrapper">
+        <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <div class="success-title">Unsubscribed Successfully</div>
+      <p class="success-message">
+        You've been unsubscribed successfully. We're sorry to see you go.
+        You will no longer receive our newsletters.
+        Thank you for being part of our community!
+      </p>
+    </div>
+
+  </div>
+
+  <div class="page-footer">© 2025 AI Bulk Messaging System &nbsp;·&nbsp; Powered by CubeMoons</div>
+
+  <script>
+    // ── Determine API base URL ──────────────────────────────────────────────────
+    const API_BASE =
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:8000/api'
+        : 'https://api.automation.cubemoons.com/api';
+
+    // ── Extract email & campaign_id from URL query params ──────────────────────
+    let currentEmail = '';
+    let currentCampaignId = '';
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const email = urlParams.get('email') || '';
+      const campaignId = urlParams.get('campaign_id') || '';
+
+      currentEmail = decodeURIComponent(email).trim();
+      currentCampaignId = decodeURIComponent(campaignId).trim();
+
+      const emailDisplay = document.getElementById('email-display');
+      emailDisplay.textContent = currentEmail || 'your email address';
+    });
+
+    // ── Dropdown: toggle Others textarea ───────────────────────────────────────
+    function checkReason(selectObj) {
+      const othersContainer = document.getElementById('others-container');
+      const othersTextarea  = document.getElementById('others-reason');
+      const reasonLabel     = document.getElementById('reason-label');
+      const submitBtn       = document.getElementById('submit-btn');
+
+      submitBtn.disabled = !selectObj.value;
+
+      if (selectObj.value === 'Others') {
+        othersContainer.style.display = 'flex';
+        setTimeout(() => {
+          othersContainer.classList.add('show');
+          reasonLabel.style.display = 'block';
+        }, 10);
+        othersTextarea.setAttribute('required', 'true');
+        othersTextarea.focus();
+      } else {
+        othersContainer.classList.remove('show');
+        reasonLabel.style.display = 'none';
+        othersTextarea.removeAttribute('required');
+        setTimeout(() => {
+          if (!othersContainer.classList.contains('show')) {
+            othersContainer.style.display = 'none';
+          }
+        }, 300);
+      }
+    }
+
+    // ── Form submit: call backend then show success ────────────────────────────
+    async function handleUnsubscribe(event) {
+      event.preventDefault();
+
+      const formContainer    = document.getElementById('form-container');
+      const successContainer = document.getElementById('success-container');
+      const submitBtn        = document.getElementById('submit-btn');
+      const errorBox         = document.getElementById('error-box');
+      const reason           = document.getElementById('unsubscribe-reason').value;
+      const otherReason      = document.getElementById('others-reason').value.trim();
+
+      submitBtn.disabled    = true;
+      submitBtn.textContent = 'Processing...';
+      errorBox.style.display = 'none';
+
+      try {
+        const response = await fetch(`${API_BASE}/campaign/unsubscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email:        currentEmail,
+            campaign_id:  currentCampaignId,
+            reason:       reason,
+            other_reason: otherReason
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server responded with ${response.status}`);
+        }
+
+        // Success — fade out form, show success message
+        formContainer.classList.add('fade-out');
+        setTimeout(() => {
+          formContainer.style.display    = 'none';
+          successContainer.style.display = 'flex';
+        }, 380);
+
+      } catch (err) {
+        console.error('Unsubscribe API error:', err);
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Unsubscribe';
+        errorBox.style.display = 'block';
+      }
+    }
+  </script>
+
+</body>
+</html>
