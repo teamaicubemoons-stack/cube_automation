@@ -8,20 +8,21 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 async def detect_columns(columns: list, sample_rows: list):
     """
-    Identifies phone, email, and name columns from dataset headers.
+    Identifies phone, email, name, and company columns from dataset headers.
     """
     prompt = f"""
     Given the following dataset columns and sample data, identify which column represents:
-    1. phone (the primary mobile number)
+    1. phone (the primary mobile/phone number)
     2. email (the primary email address)
-    3. name (the person's name)
+    3. name (the person's full name or contact name)
+    4. company (the company name, organization, or firm — leave empty string if not present)
 
     Columns: {columns}
     Sample Data: {sample_rows}
 
-    Return ONLY a JSON object with keys: "phone", "email", and "name". 
+    Return ONLY a JSON object with keys: "phone", "email", "name", and "company".
     If a column is not found, use an empty string.
-    Example: {{"phone": "Mobile", "email": "User Email", "name": "Client Name"}}
+    Example: {{"phone": "Mobile", "email": "User Email", "name": "Client Name", "company": "Company Name"}}
     """
     
     try:
@@ -33,7 +34,7 @@ async def detect_columns(columns: list, sample_rows: list):
         return json.loads(response.choices[0].message.content)
     except Exception as e:
         print(f"AI Detection Error: {e}")
-        return {"phone": "", "email": "", "name": ""}
+        return {"phone": "", "email": "", "name": "", "company": ""}
 
 async def rewrite_message(message: str, tone: str = "professional"):
     """

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download } from 'lucide-react';
+import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -485,13 +485,42 @@ function App() {
 
   const getLatestRange = () => {
     if (!campaignList || campaignList.length === 0) return null;
-    const latestCampaign = campaignList[0];
-    const match = latestCampaign.match(/\(([^)]+)\)/);
+    const latestCampaign = campaignList[0].id || campaignList[0];
+    const match = String(latestCampaign).match(/\(([^)]+)\)/);
     return match ? match[1] : 'All';
   };
   const latestRange = getLatestRange();
 
   const uniqueCreators = ['all', ...new Set(campaignResults.map(r => r.generated_by).filter(Boolean))];
+
+  // Accumulate campaign ID to Date string mapping dynamically
+  const [campaignDates, setCampaignDates] = useState({});
+
+  useEffect(() => {
+    if (campaignResults.length > 0) {
+      setCampaignDates(prev => {
+        const next = { ...prev };
+        let updated = false;
+        campaignResults.forEach(r => {
+          if (!r.sent_time || !r.campaign_id) return;
+          // Extract the date part (e.g. before comma/time, like "27 June 2026")
+          const datePart = r.sent_time.split(",")[0].trim();
+          if (next[r.campaign_id] !== datePart) {
+            next[r.campaign_id] = datePart;
+            updated = true;
+          }
+        });
+        return updated ? next : prev;
+      });
+    }
+  }, [campaignResults]);
+
+  const getDateLabelForCampaign = (cid) => {
+    if (campaignDates[cid]) {
+      return ` — ${campaignDates[cid]}`;
+    }
+    return '';
+  };
 
   const filteredResults = campaignResults.filter((result) => {
     if (selectedDate) {
@@ -1138,6 +1167,8 @@ function App() {
                             <Phone size={11} className="text-slate-400" />
                           ) : key === 'email' ? (
                             <Mail size={11} className="text-slate-400" />
+                          ) : key === 'company' ? (
+                            <Building2 size={11} className="text-slate-400" />
                           ) : (
                             <MessageSquare size={11} className="text-slate-400" />
                           )}
@@ -1261,9 +1292,11 @@ function App() {
           </button>
         </section>
       </div>
+      </div> {/* Close the max-w-6xl main content wrapper */}
 
-      {/* Progress Section */}
-      <section className="mt-8 md:mt-12 glass p-5 md:p-8">
+      {/* Progress Section (Full screen width) */}
+      <div className="w-full px-4 md:px-8 pb-12 flex-1">
+      <section className="mt-8 glass p-5 md:p-8 w-full max-w-none">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-primary/10 border border-primary/20 rounded-xl">
@@ -1290,7 +1323,14 @@ function App() {
                 className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[150px] justify-between"
               >
                 <span className="truncate pr-1">
-                  {selectedCampaign === 'all' ? 'All Campaigns' : selectedCampaign}
+                  {selectedCampaign === 'all' 
+                    ? 'All Campaigns' 
+                    : (() => {
+                        const match = campaignList.find(c => (c.id || c) === selectedCampaign);
+                        const dateStr = match && match.date ? ` — ${match.date}` : '';
+                        return `${selectedCampaign}${dateStr}`;
+                      })()
+                  }
                 </span>
                 <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 shrink-0 ${isDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -1305,32 +1345,43 @@ function App() {
                     className="absolute right-0 mt-1.5 w-64 bg-white/90 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg shadow-slate-200/20 py-1.5 z-30 max-h-60 overflow-y-auto scrollbar-thin"
                   >
                     <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCampaign('all');
-                        setIsDropdownOpen(false);
-                      }}
-                      className={`w-full text-left px-3.5 py-2 text-xs font-semibold transition-colors hover:bg-primary/5 hover:text-primary flex items-center justify-between
-                        ${selectedCampaign === 'all' ? 'text-primary bg-primary/5' : 'text-slate-600'}`}
+                       type="button"
+                       onClick={() => {
+                         setSelectedCampaign('all');
+                         setIsDropdownOpen(false);
+                       }}
+                       className={`w-full text-left px-3.5 py-2 text-xs font-semibold transition-colors hover:bg-primary/5 hover:text-primary flex items-center justify-between
+                         ${selectedCampaign === 'all' ? 'text-primary bg-primary/5' : 'text-slate-600'}`}
                     >
                       <span>All Campaigns</span>
                       {selectedCampaign === 'all' && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
                     </button>
-                    {campaignList.map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCampaign(id);
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3.5 py-2 text-xs font-semibold transition-colors hover:bg-primary/5 hover:text-primary flex items-center justify-between
-                          ${selectedCampaign === id ? 'text-primary bg-primary/5' : 'text-slate-600'}`}
-                      >
-                        <span className="truncate pr-2">{id}</span>
-                        {selectedCampaign === id && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
-                      </button>
-                    ))}
+                    {campaignList.map((camp) => {
+                      const campId = camp.id || camp;
+                      const campDate = camp.date || campaignDates[campId];
+                      return (
+                        <button
+                          key={campId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCampaign(campId);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3.5 py-2 text-xs font-semibold transition-colors hover:bg-primary/5 hover:text-primary flex items-center justify-between
+                            ${selectedCampaign === campId ? 'text-primary bg-primary/5' : 'text-slate-600'}`}
+                        >
+                          <span className="truncate pr-2 flex flex-col">
+                            <span>{campId}</span>
+                            {campDate && (
+                              <span className="text-[10px] font-normal text-slate-400 mt-0.5">
+                                {campDate}
+                              </span>
+                            )}
+                          </span>
+                          {selectedCampaign === campId && <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                        </button>
+                      );
+                    })}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1476,21 +1527,26 @@ function App() {
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/75">
+                <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Campaign ID</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Recipient</th>
+                <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Company Name</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Platform</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Contact Address</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Date</th>
                 {user && user.role === 'Admin' && (
-                  <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Generated By</th>
+                  <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Sent By</th>
                 )}
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 text-center">Status</th>
+                <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 text-center">Subscription (Yes / No)</th>
+                <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Unsubscribe Reason</th>
+                <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">If Other (Reason)</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredResults.length === 0 ? (
                 <tr>
-                  <td colSpan={user && user.role === 'Admin' ? "7" : "6"} className="py-16 text-center">
+                  <td colSpan={user && user.role === 'Admin' ? "12" : "11"} className="py-16 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
                       {isLoadingLogs ? (
                         <>
@@ -1525,7 +1581,9 @@ function App() {
                     key={idx}
                     className="hover:bg-slate-50/50 transition-colors"
                   >
+                    <td className="p-4 text-xs text-slate-500 font-medium whitespace-nowrap">{result.campaign_id || selectedCampaign}</td>
                     <td className="p-4 font-semibold text-slate-700">{result.name}</td>
+                    <td className="p-4 text-xs text-slate-600 font-semibold">{result.company || "-"}</td>
                     <td className="p-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${result.type === 'WhatsApp' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-sky-50 text-sky-600 border border-sky-100'}`}>
                         {result.type}
@@ -1558,6 +1616,13 @@ function App() {
                         </span>
                       )}
                     </td>
+                    <td className="p-4 text-center">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${result.subscription === 'No' ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                        {result.subscription || "Yes"}
+                      </span>
+                    </td>
+                    <td className="p-4 text-xs text-slate-600 font-semibold">{result.unsub_reason || "-"}</td>
+                    <td className="p-4 text-xs text-slate-500 max-w-[150px] truncate">{result.unsub_other || "-"}</td>
                     <td className="p-4 text-xs text-slate-400 max-w-xs truncate">
                       {result.reason || "Delivered successfully"}
                     </td>
