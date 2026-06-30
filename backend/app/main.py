@@ -12,6 +12,7 @@ app = FastAPI(title="AI Bulk Messaging System")
 origins = [
     "https://api.automation.cubemoons.com",
     "https://automation.cubemoons.com",
+    "https://unsubscribe.cubemoons.com",
     "http://api.automation.cubemoons.com",
     "http://automation.cubemoons.com",
     "http://localhost:5173", 

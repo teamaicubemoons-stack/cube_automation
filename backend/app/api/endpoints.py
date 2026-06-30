@@ -1057,6 +1057,8 @@ async def handle_unsubscribe(req: UnsubscribeRequest):
             reason=req.reason,
             other_reason=req.other_reason
         )
+        # Invalidate the log cache so the frontend fetches fresh data immediately
+        SHEETS_LOGS_CACHE.clear()
         if updated:
             return {"success": True, "message": "Unsubscribed successfully."}
         else:
