@@ -240,6 +240,35 @@ async def ensure_logs_sheet_headers(spreadsheet_id: str):
     except Exception as e:
         print(f"DEBUG: Logs sheet is inaccessible: {e}")
 
+async def check_unsubscribed_emails(spreadsheet_id: str) -> set:
+    """
+    Reads the logs database sheet and returns a set of all email addresses 
+    that have unsubscribed (Subscription (Yes / No) == 'No').
+    """
+    spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
+    service = get_sheets_service()
+    try:
+        result = await _execute(service.values().get(
+            spreadsheetId=spreadsheet_id,
+            range="Logs Data!F:J"
+        ))
+        rows = result.get('values', [])
+    except Exception as e:
+        print(f"DEBUG: Error reading Logs Data sheet for unsubscribe check: {e}")
+        return set()
+
+    unsubscribed = set()
+    for idx, row in enumerate(rows):
+        if idx == 0 or not row:
+            continue
+        # Col F is index 0 (Email), Col J is index 4 (Subscription)
+        if len(row) >= 5:
+            email = str(row[0]).strip().lower()
+            subscription = str(row[4]).strip().lower()
+            if email and subscription == "no":
+                unsubscribed.add(email)
+    return unsubscribed
+
 async def append_campaign_log(
     spreadsheet_id: str,
     campaign_id: str,
@@ -250,7 +279,8 @@ async def append_campaign_log(
     status: str,
     details: str,
     generated_by: str = "",
-    company_name: str = ""
+    company_name: str = "",
+    subscription: str = "Yes"
 ):
     """Appends a campaign log entry to the Logs Data sheet (12-column layout)."""
     from datetime import datetime
@@ -266,7 +296,7 @@ async def append_campaign_log(
     row_data = [
         campaign_id, platform, name, company_name or "",
         phone or "", email or "", timestamp, log_details, generated_by,
-        "Yes", "", ""   # Default subscription = Yes (not yet unsubscribed)
+        subscription, "", ""
     ]
     
     try:

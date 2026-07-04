@@ -17,7 +17,8 @@ from app.services.sheet_service import (
     append_campaign_log,
     update_log_status,
     update_unsubscribe_status,
-    read_users_data
+    read_users_data,
+    check_unsubscribed_emails
 )
 
 router = APIRouter()
@@ -191,6 +192,14 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
     print(f"Total Rows: {len(rows)} | Platform: {platform}")
     print(f"{'='*40}")
 
+    # Fetch unsubscribed email addresses
+    unsubscribed_emails = set()
+    try:
+        unsubscribed_emails = await check_unsubscribed_emails(spreadsheet_id)
+        print(f"INFO: Loaded {len(unsubscribed_emails)} unsubscribed email(s) from sheet logs.")
+    except Exception as ex:
+        print(f"DEBUG: Failed to check unsubscribed emails: {ex}")
+
     def get_idx(key, default_name):
         idx = headers.index(mapping_dict[key]) if mapping_dict.get(key) in headers else -1
         if idx == -1:
@@ -308,6 +317,8 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                     result = {"status": "Failed", "reason": "Email address is empty"}
                 elif not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
                     result = {"status": "Failed", "reason": "Invalid email address format"}
+                elif email.lower() in unsubscribed_emails:
+                    result = {"status": "Unsubscribed", "reason": "Recipient previously unsubscribed"}
                 else:
                     body = (email_body or "").replace("{name}", name)
                     tracking_url = f"{base_url}api/campaign/track-open?campaign_id={campaign_id}&email={email}"
@@ -335,6 +346,7 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                         result = {"status": "Failed", "reason": str(e)}
 
             reason_str = f"{result['status']}: {result.get('reason')}" if result.get('reason') else result['status']
+            is_unsub = result['status'] == "Unsubscribed"
             campaign_manager[campaign_id]["results"].append({
                 "campaign_id": campaign_id,
                 "name": name,
@@ -347,15 +359,15 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                 "row_index": row_index,
                 "sent_time": sent_ts,
                 "generated_by": generated_by,
-                "subscription": "Yes",
-                "unsub_reason": "",
+                "subscription": "No" if is_unsub else "Yes",
+                "unsub_reason": "Recipient previously unsubscribed" if is_unsub else "",
                 "unsub_other": ""
             })
 
             if result['status'] == "Sent":
                 print(f"   Email: {result['status']}")
             else:
-                print(f"   Email Failed: {result.get('reason', 'Unknown reason')}")
+                print(f"   Email Status: {result['status']} ({result.get('reason', 'Unknown reason')})")
 
             await append_campaign_log(
                 spreadsheet_id=spreadsheet_id,
@@ -367,7 +379,8 @@ async def run_campaign_task(campaign_id, platform, spreadsheet_id, rows, headers
                 status=result['status'],
                 details=result.get('reason', ''),
                 generated_by=generated_by,
-                company_name=company_name
+                company_name=company_name,
+                subscription="No" if is_unsub else "Yes"
             )
 
         await asyncio.sleep(2)
