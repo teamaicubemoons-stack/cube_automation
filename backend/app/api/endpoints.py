@@ -808,6 +808,8 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                                 status_val = "Seen"
                             elif "Failed" in details_val:
                                 status_val = "Failed"
+                            elif "Unsubscribed" in details_val:
+                                status_val = "Unsubscribed"
                                 
                             all_results.append({
                                 "campaign_id": row[0],
@@ -880,6 +882,8 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                             status_val = "Seen"
                         elif "Failed" in details_val:
                             status_val = "Failed"
+                        elif "Unsubscribed" in details_val:
+                            status_val = "Unsubscribed"
                             
                         results.append({
                             "campaign_id": row[0],

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download, Building2, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -103,6 +103,15 @@ function App() {
   const [isSubscriptionDropdownOpen, setIsSubscriptionDropdownOpen] = useState(false);
   const subscriptionDropdownRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+
+  // Debounce search query updates to avoid lag on typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(localSearchQuery);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [localSearchQuery]);
 
   // Status Filter States and Refs
   const [selectedStatus, setSelectedStatus] = useState('all');
@@ -540,62 +549,64 @@ function App() {
     return '';
   };
 
-  const filteredResults = campaignResults.filter((result) => {
-    if (selectedDate) {
-      if (!result.sent_time || !result.sent_time.includes(selectedDate)) {
-        return false;
-      }
-    }
-    if (selectedCreator !== 'all') {
-      if (!result.generated_by || result.generated_by !== selectedCreator) {
-        return false;
-      }
-    }
-    if (selectedPlatform !== 'all') {
-      if (!result.type || result.type.toLowerCase() !== selectedPlatform.toLowerCase()) {
-        return false;
-      }
-    }
-    if (selectedSubscription !== 'all') {
-      const subVal = result.subscription || 'Yes';
-      if (subVal !== selectedSubscription) {
-        return false;
-      }
-    }
-    if (selectedStatus !== 'all') {
-      const statusVal = result.status;
-      if (selectedStatus === 'Failed') {
-        if (statusVal === 'Seen' || statusVal === 'Sent') {
-          return false;
-        }
-      } else {
-        if (statusVal !== selectedStatus) {
+  const filteredResults = useMemo(() => {
+    return campaignResults.filter((result) => {
+      if (selectedDate) {
+        if (!result.sent_time || !result.sent_time.includes(selectedDate)) {
           return false;
         }
       }
-    }
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      const name = (result.name || '').toLowerCase();
-      const company = (result.company || '').toLowerCase();
-      const contact = (result.phone || result.email || '').toLowerCase();
-      const campaignId = (result.campaign_id || '').toLowerCase();
-      const unsubReason = (result.unsub_reason || '').toLowerCase();
-      const unsubOther = (result.unsub_other || '').toLowerCase();
+      if (selectedCreator !== 'all') {
+        if (!result.generated_by || result.generated_by !== selectedCreator) {
+          return false;
+        }
+      }
+      if (selectedPlatform !== 'all') {
+        if (!result.type || result.type.toLowerCase() !== selectedPlatform.toLowerCase()) {
+          return false;
+        }
+      }
+      if (selectedSubscription !== 'all') {
+        const subVal = result.subscription || 'Yes';
+        if (subVal !== selectedSubscription) {
+          return false;
+        }
+      }
+      if (selectedStatus !== 'all') {
+        const statusVal = result.status;
+        if (selectedStatus === 'Failed') {
+          if (statusVal === 'Seen' || statusVal === 'Sent') {
+            return false;
+          }
+        } else {
+          if (statusVal !== selectedStatus) {
+            return false;
+          }
+        }
+      }
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const name = (result.name || '').toLowerCase();
+        const company = (result.company || '').toLowerCase();
+        const contact = (result.phone || result.email || '').toLowerCase();
+        const campaignId = (result.campaign_id || '').toLowerCase();
+        const unsubReason = (result.unsub_reason || '').toLowerCase();
+        const unsubOther = (result.unsub_other || '').toLowerCase();
 
-      if (
-        !name.includes(query) &&
-        !company.includes(query) &&
-        !contact.includes(query) &&
-        !campaignId.includes(query) &&
-        !unsubReason.includes(query) &&
-        !unsubOther.includes(query)
-      ) {
-        return false;
+        if (
+          !name.includes(query) &&
+          !company.includes(query) &&
+          !contact.includes(query) &&
+          !campaignId.includes(query) &&
+          !unsubReason.includes(query) &&
+          !unsubOther.includes(query)
+        ) {
+          return false;
+        }
       }
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [campaignResults, selectedDate, selectedCreator, selectedPlatform, selectedSubscription, selectedStatus, searchQuery]);
 
   if (!user) {
     return (
@@ -616,7 +627,7 @@ function App() {
             </div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full text-xs font-semibold text-primary">
               <Sparkles size={12} className="text-secondary animate-pulse" />
-              <span>Secure Access Portal</span>
+              <span>Cube AI</span>
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary via-secondary to-accent pt-1 pb-1">
               Campaign Console
@@ -1053,7 +1064,7 @@ function App() {
           className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full text-xs font-semibold text-primary mb-3"
         >
           <Sparkles size={12} className="text-secondary animate-pulse" />
-          <span>Enterprise Campaign Console</span>
+          <span>Cube AI campaign console</span>
         </motion.div>
         <motion.h1
           initial={{ opacity: 0, y: -10 }}
@@ -1386,21 +1397,24 @@ function App() {
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
           {/* Search Bar (Row 2 left side) */}
-          <div className="relative flex-grow max-w-lg min-w-[260px] w-full">
+          <div className="relative flex-grow max-w-md min-w-[200px] w-full">
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={localSearchQuery}
+              onChange={(e) => setLocalSearchQuery(e.target.value)}
               placeholder="Search recipient, address, company..."
               className="w-full bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-9 pr-8 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 transition-all shadow-sm"
             />
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none">
               <Search size={14} />
             </span>
-            {searchQuery && (
+            {localSearchQuery && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setLocalSearchQuery('');
+                  setSearchQuery('');
+                }}
                 className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               >
                 <X size={14} />
@@ -1414,7 +1428,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[150px] justify-between"
+                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[120px] max-w-[150px] justify-between"
                 >
                   <span className="truncate pr-1">
                     {selectedCampaign === 'all' 
@@ -1486,7 +1500,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setIsPlatformDropdownOpen(!isPlatformDropdownOpen)}
-                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[130px] justify-between"
+                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[110px] max-w-[130px] justify-between"
                 >
                   <span className="truncate pr-1">
                     {selectedPlatform === 'all' ? 'All Platforms' : selectedPlatform}
@@ -1528,7 +1542,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setIsSubscriptionDropdownOpen(!isSubscriptionDropdownOpen)}
-                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[130px] justify-between"
+                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[120px] max-w-[140px] justify-between"
                 >
                   <span className="truncate pr-1">
                     {selectedSubscription === 'all' 
@@ -1578,7 +1592,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[130px] justify-between"
+                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[110px] max-w-[130px] justify-between"
                 >
                   <span className="truncate pr-1">
                     {selectedStatus === 'all' 
@@ -1629,7 +1643,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setIsCreatorDropdownOpen(!isCreatorDropdownOpen)}
-                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[140px] justify-between"
+                  className="bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary/60 cursor-pointer transition-all flex items-center gap-2 shadow-sm min-w-[120px] max-w-[140px] justify-between"
                 >
                   <span className="truncate pr-1">
                     {selectedCreator === 'all' ? 'All Creators' : selectedCreator}
