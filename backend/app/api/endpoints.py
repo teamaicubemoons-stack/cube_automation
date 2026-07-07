@@ -98,7 +98,7 @@ async def login(req: LoginRequest):
                 return user_session
             raise HTTPException(
                 status_code=502,
-                detail="External authentication service returned an error."
+                detail="Login failed. Please check your username and password."
             )
             
     except HTTPException:
@@ -979,6 +979,105 @@ async def export_campaign_logs(campaign_id: str, spreadsheet_id: str = None, cur
         # Access openpyxl workbook and worksheet to apply styling
         workbook = writer.book
         worksheet = writer.sheets[campaign_id]
+        
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
+        
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        
+        # Apply style to all header cells (row 1)
+        for col_idx in range(1, len(df.columns) + 1):
+            cell = worksheet.cell(row=1, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            
+        # Auto-adjust column widths based on maximum content length
+        for col_idx in range(1, len(df.columns) + 1):
+            col_letter = get_column_letter(col_idx)
+            max_len = len(df.columns[col_idx - 1])
+            for val in df.iloc[:, col_idx - 1]:
+                max_len = max(max_len, len(str(val or "")))
+            worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            
+    buffer.seek(0)
+    
+    filename = f"{campaign_id}_logs.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+
+class ExportCustomRequest(BaseModel):
+    campaign_id: str = "all"
+    results: list
+
+@router.post("/campaign/export-custom")
+async def export_custom_logs(req: ExportCustomRequest, current_user: dict = Depends(get_current_user)):
+    """Exports the provided filtered campaign logs list to a styled Excel file."""
+    results = req.results
+    campaign_id = req.campaign_id
+
+    if not results:
+        raise HTTPException(status_code=400, detail="No logs provided to export.")
+
+    export_data = []
+    for idx, item in enumerate(results, start=1):
+        sno_val = item.get("sno") or str(idx)
+        
+        # Parse and format the Date column to "DD/MM/YYYY Time"
+        raw_date = item.get("sent_time", "")
+        formatted_date = raw_date
+        if raw_date:
+            date_formats = [
+                "%Y-%m-%d %I:%M:%S %p",
+                "%Y-%m-%d %H:%M:%S",
+                "%d %B %Y, %I:%M%p",
+                "%d %B %Y, %H:%M",
+                "%d %B %Y, %I:%M %p"
+            ]
+            for date_fmt in date_formats:
+                try:
+                    dt = datetime.strptime(raw_date.strip(), date_fmt)
+                    formatted_date = dt.strftime("%d/%m/%Y %I:%M:%S %p")
+                    break
+                except ValueError:
+                    continue
+
+        export_data.append({
+            "SNO": sno_val,
+            "Campaign ID": item.get("campaign_id", campaign_id),
+            "Date": formatted_date,
+            "Name": item.get("name", ""),
+            "Email": item.get("email") or "",
+            "Phone": item.get("phone") or "",
+            "Status": item.get("status", ""),
+            "Detail": item.get("reason", ""),
+            "Sent By": item.get("generated_by", ""),
+            "Subscription (Yes / No)": item.get("subscription", "Yes"),
+            "Unsubscribe Reason": item.get("unsub_reason", ""),
+            "If Other (Reason)": item.get("unsub_other", "")
+        })
+
+    df = pd.DataFrame(export_data)
+    
+    buffer = io.BytesIO()
+    sheet_name = campaign_id or "Exported Logs"
+    if len(sheet_name) > 30:
+        sheet_name = sheet_name[:30]
+    sheet_name = re.sub(r'[\\/*?:\[\]]', '_', sheet_name)
+
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # Access openpyxl workbook and worksheet to apply styling
+        workbook = writer.book
+        worksheet = writer.sheets[sheet_name]
         
         from openpyxl.styles import Font, PatternFill
         from openpyxl.utils import get_column_letter

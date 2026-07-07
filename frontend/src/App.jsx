@@ -55,6 +55,24 @@ const formatExactDate = (dateStr) => {
   }
 };
 
+const getLogDateObject = (dateStr) => {
+  if (!dateStr || dateStr.toLowerCase().includes("pending")) return null;
+  try {
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+    }
+    const cleanedStr = dateStr.replace(/-/g, '/').split(',')[0].trim();
+    const d = new Date(cleanedStr);
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
+};
+
 function App() {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('cube_campaign_user');
@@ -88,6 +106,13 @@ function App() {
   const dropdownRef = useRef(null);
   const [selectedDate, setSelectedDate] = useState('');
   const dateInputRef = useRef(null);
+
+  // Custom date range states
+  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+  const [dateFilterType, setDateFilterType] = useState('single'); // 'single' or 'range'
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const datePopoverRef = useRef(null);
 
   // New Filters States and Refs
   const [selectedCreator, setSelectedCreator] = useState('all');
@@ -286,6 +311,9 @@ function App() {
       }
       if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
         setIsStatusDropdownOpen(false);
+      }
+      if (datePopoverRef.current && !datePopoverRef.current.contains(event.target)) {
+        setIsDatePopoverOpen(false);
       }
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setShowProfileMenu(false);
@@ -487,19 +515,28 @@ function App() {
   };
 
   const handleExportCampaign = async () => {
-    if (selectedCampaign === 'all') return;
+    if (filteredResults.length === 0) {
+      showToast("No logs to export.", "error");
+      return;
+    }
     try {
       showToast("Preparing Excel sheet...", "success");
-      const spreadsheetParam = spreadsheetId ? `?spreadsheet_id=${spreadsheetId}` : '';
-      const response = await axios.get(
-        `${API_BASE_URL}/campaign/${selectedCampaign}/export${spreadsheetParam}`,
+      const response = await axios.post(
+        `${API_BASE_URL}/campaign/export-custom`,
+        {
+          campaign_id: selectedCampaign === 'all' ? 'all_campaigns' : selectedCampaign,
+          results: filteredResults
+        },
         { responseType: 'blob' }
       );
       
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${selectedCampaign}_logs.xlsx`);
+      const filename = selectedCampaign === 'all' 
+        ? 'all_campaigns_logs.xlsx' 
+        : `${selectedCampaign}_logs.xlsx`;
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -551,9 +588,34 @@ function App() {
 
   const filteredResults = useMemo(() => {
     return campaignResults.filter((result) => {
-      if (selectedDate) {
-        if (!result.sent_time || !result.sent_time.includes(selectedDate)) {
-          return false;
+      if (dateFilterType === 'single') {
+        if (selectedDate) {
+          const logDate = getLogDateObject(result.sent_time);
+          if (!logDate) return false;
+          const parts = selectedDate.split('-');
+          const targetDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+          if (logDate.getTime() !== targetDate.getTime()) {
+            return false;
+          }
+        }
+      } else if (dateFilterType === 'range') {
+        if (startDate || endDate) {
+          const logDate = getLogDateObject(result.sent_time);
+          if (!logDate) return false;
+          if (startDate) {
+            const parts = startDate.split('-');
+            const startTarget = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            if (logDate.getTime() < startTarget.getTime()) {
+              return false;
+            }
+          }
+          if (endDate) {
+            const parts = endDate.split('-');
+            const endTarget = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            if (logDate.getTime() > endTarget.getTime()) {
+              return false;
+            }
+          }
         }
       }
       if (selectedCreator !== 'all') {
@@ -606,7 +668,7 @@ function App() {
       }
       return true;
     });
-  }, [campaignResults, selectedDate, selectedCreator, selectedPlatform, selectedSubscription, selectedStatus, searchQuery]);
+  }, [campaignResults, selectedDate, dateFilterType, startDate, endDate, selectedCreator, selectedPlatform, selectedSubscription, selectedStatus, searchQuery]);
 
   if (!user) {
     return (
@@ -1382,17 +1444,19 @@ function App() {
             </div>
           </div>
           {/* Export Excel (Row 1 right side) */}
-          {selectedCampaign !== 'all' && (
-            <button
-              type="button"
-              onClick={handleExportCampaign}
-              className="btn-primary py-2 px-3.5 text-xs flex items-center gap-1.5 shadow-sm rounded-xl cursor-pointer"
-              title="Export Logs to Excel"
-            >
-              <Download size={14} />
-              <span className="hidden sm:inline">Export Excel</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleExportCampaign}
+            disabled={filteredResults.length === 0}
+            className={`py-2 px-3.5 text-xs flex items-center gap-1.5 shadow-sm rounded-xl cursor-pointer transition-all
+              ${filteredResults.length === 0 
+                ? 'bg-slate-100 border border-slate-200/50 text-slate-400 cursor-not-allowed' 
+                : 'btn-primary'}`}
+            title="Export Logs to Excel"
+          >
+            <Download size={14} />
+            <span>Export Excel</span>
+          </button>
         </div>
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
@@ -1682,33 +1746,115 @@ function App() {
             )}
 
             {/* Date Picker Filter */}
-            <div className="flex items-center gap-1.5 relative">
-              <input
-                ref={dateInputRef}
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="absolute left-0 top-0 w-8 h-8 opacity-0 pointer-events-none -z-10"
-              />
+            <div className="flex items-center gap-1.5 relative" ref={datePopoverRef}>
               <button
                 type="button"
-                onClick={() => dateInputRef.current?.showPicker()}
+                onClick={() => setIsDatePopoverOpen(!isDatePopoverOpen)}
                 className={`p-2 rounded-xl border bg-white cursor-pointer transition-all hover:bg-slate-50 flex items-center justify-center shadow-sm relative z-10
-                  ${selectedDate
+                  ${(selectedDate && dateFilterType === 'single') || ((startDate || endDate) && dateFilterType === 'range')
                     ? 'border-primary text-primary bg-primary/5 hover:bg-primary/10'
                     : 'border-slate-200/80 text-slate-500 hover:text-slate-700'
                   }`}
-                title={selectedDate ? `Date: ${selectedDate}` : "Filter by Date"}
+                title="Filter by Date / Range"
               >
                 <Calendar size={14} />
-                {selectedDate && (
+                {((selectedDate && dateFilterType === 'single') || ((startDate || endDate) && dateFilterType === 'range')) && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse" />
                 )}
               </button>
-              {selectedDate && (
+
+              <AnimatePresence>
+                {isDatePopoverOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 mt-1.5 w-72 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-xl p-4 z-40 space-y-4"
+                  >
+                    <div className="flex gap-2 p-1 bg-slate-100 border border-slate-200/60 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setDateFilterType('single')}
+                        className={`flex-1 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors duration-150 cursor-pointer ${dateFilterType === 'single' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Specific Date
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDateFilterType('range')}
+                        className={`flex-1 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors duration-150 cursor-pointer ${dateFilterType === 'range' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Date Range
+                      </button>
+                    </div>
+
+                    {dateFilterType === 'single' ? (
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Select Date</label>
+                        <input
+                          type="date"
+                          value={selectedDate}
+                          onChange={(e) => setSelectedDate(e.target.value)}
+                          className="w-full input-field px-3 py-2 text-xs"
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Start Date</label>
+                          <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-full input-field px-3 py-2 text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">End Date</label>
+                          <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-full input-field px-3 py-2 text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 justify-end border-t border-slate-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDate('');
+                          setStartDate('');
+                          setEndDate('');
+                          setIsDatePopoverOpen(false);
+                        }}
+                        className="px-3 py-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsDatePopoverOpen(false)}
+                        className="px-3 py-1.5 bg-gradient-to-r from-primary to-secondary text-white rounded-xl text-xs font-bold hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer shadow-md shadow-primary/10"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {((selectedDate && dateFilterType === 'single') || ((startDate || endDate) && dateFilterType === 'range')) && (
                 <button
                   type="button"
-                  onClick={() => setSelectedDate('')}
+                  onClick={() => {
+                    setSelectedDate('');
+                    setStartDate('');
+                    setEndDate('');
+                  }}
                   className="p-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100/70 hover:text-rose-600 transition-all cursor-pointer flex items-center justify-center shadow-sm"
                   title="Clear Date Filter"
                 >
