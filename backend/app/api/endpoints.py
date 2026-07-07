@@ -548,7 +548,6 @@ EMAILS_SENT_TODAY_CACHE = {
 
 def fetch_gmail_sent_count(smtp_user, smtp_pass, smtp_server):
     import imaplib
-    import re
     from datetime import datetime, timedelta
     
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -790,7 +789,6 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                     "timestamp": now
                 }
             
-            campaign_recipients = {}
             for row in rows:
                 if len(row) >= 2 and row[0].startswith("CAM"):
                     row_generated_by = row[8] if len(row) > 8 else "System"
@@ -812,27 +810,8 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                             elif "Unsubscribed" in details_val:
                                 status_val = "Unsubscribed"
                                 
-                            campaign_id_val = row[0]
-                            if campaign_id_val not in campaign_recipients:
-                                start_sno = 1
-                                range_match = re.search(r"\((\d+)-", campaign_id_val)
-                                if range_match:
-                                    try:
-                                        start_sno = int(range_match.group(1))
-                                    except ValueError:
-                                        pass
-                                campaign_recipients[campaign_id_val] = {
-                                    "start_sno": start_sno,
-                                    "counter": 0
-                                }
-                            
-                            state = campaign_recipients[campaign_id_val]
-                            sno_val = str(state["start_sno"] + state["counter"])
-                            state["counter"] += 1
-                            
                             all_results.append({
                                 "campaign_id": row[0],
-                                "sno": sno_val,
                                 "name": name_val,
                                 "company": company_val,
                                 "phone": phone_val if platform_val == "WhatsApp" else None,
@@ -849,6 +828,45 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
         except Exception as e:
             print(f"DEBUG: Logs sheet is inaccessible for all campaign status polling: {e}")
             
+    # Sort by sent_time descending (newest first)
+    def get_sent_time_key(item):
+        raw_date = item.get("sent_time", "")
+        if not raw_date:
+            return datetime.min
+        date_formats = [
+            "%d %B %Y, %I:%M%p",
+            "%d %B %Y, %I:%M %p",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %I:%M:%S %p",
+            "%d %B %Y, %H:%M"
+        ]
+        for date_fmt in date_formats:
+            try:
+                return datetime.strptime(raw_date.strip(), date_fmt)
+            except ValueError:
+                continue
+        return datetime.min
+
+    all_results.sort(key=get_sent_time_key, reverse=True)
+    
+    campaign_recipients = {}
+    for item in all_results:
+        campaign_id_val = item.get("campaign_id")
+        if campaign_id_val not in campaign_recipients:
+            start_sno = 1
+            range_match = re.search(r"\((\d+)-", campaign_id_val)
+            if range_match:
+                try:
+                    start_sno = int(range_match.group(1))
+                except ValueError:
+                    pass
+            campaign_recipients[campaign_id_val] = {
+                "start_sno": start_sno,
+                "counter": 0
+            }
+        state = campaign_recipients[campaign_id_val]
+        item["sno"] = str(state["start_sno"] + state["counter"])
+        state["counter"] += 1
     return all_results
 
 
@@ -859,7 +877,39 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
     if campaign_id in campaign_manager:
         campaign = campaign_manager[campaign_id]
         if is_admin or campaign.get("metadata", {}).get("created_by") == current_user["username"]:
-            return campaign.get("results", [])
+            res_list = list(campaign.get("results", []))
+            # Sort by sent_time descending (newest first)
+            def get_sent_time_key(item):
+                raw_date = item.get("sent_time", "")
+                if not raw_date:
+                    return datetime.min
+                date_formats = [
+                    "%d %B %Y, %I:%M%p",
+                    "%d %B %Y, %I:%M %p",
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%d %I:%M:%S %p",
+                    "%d %B %Y, %H:%M"
+                ]
+                for date_fmt in date_formats:
+                    try:
+                        return datetime.strptime(raw_date.strip(), date_fmt)
+                    except ValueError:
+                        continue
+                return datetime.min
+            res_list.sort(key=get_sent_time_key, reverse=True)
+            
+            # Assign sequential S.Nos after sorting descending
+            start_sno = 1
+            range_match = re.search(r"\((\d+)-", campaign_id)
+            if range_match:
+                try:
+                    start_sno = int(range_match.group(1))
+                except ValueError:
+                    pass
+            for idx, item in enumerate(res_list):
+                item["sno"] = str(start_sno + idx)
+                
+            return res_list
         return []
         
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
@@ -919,7 +969,6 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                         
                         results.append({
                             "campaign_id": row[0],
-                            "sno": sno_val,
                             "name": name_val,
                             "company": company_val,
                             "phone": phone_val if platform_val == "WhatsApp" else None,
@@ -933,6 +982,38 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                             "unsub_reason": row[10] if len(row) > 10 else "",
                             "unsub_other": row[11] if len(row) > 11 else ""
                         })
+            # Sort by sent_time descending (newest first)
+            def get_sent_time_key(item):
+                raw_date = item.get("sent_time", "")
+                if not raw_date:
+                    return datetime.min
+                date_formats = [
+                    "%d %B %Y, %I:%M%p",
+                    "%d %B %Y, %I:%M %p",
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%d %I:%M:%S %p",
+                    "%d %B %Y, %H:%M"
+                ]
+                for date_fmt in date_formats:
+                    try:
+                        return datetime.strptime(raw_date.strip(), date_fmt)
+                    except ValueError:
+                        continue
+                return datetime.min
+
+            results.sort(key=get_sent_time_key, reverse=True)
+            
+            # Assign S.Nos sequentially to sorted list
+            start_sno = 1
+            range_match = re.search(r"\((\d+)-", campaign_id)
+            if range_match:
+                try:
+                    start_sno = int(range_match.group(1))
+                except ValueError:
+                    pass
+            for idx, item in enumerate(results):
+                item["sno"] = str(start_sno + idx)
+                
             return results
         except Exception as e:
             print(f"DEBUG: Logs sheet is inaccessible for campaign status lookup: {campaign_id}: {e}")
@@ -949,7 +1030,6 @@ async def export_campaign_logs(campaign_id: str, spreadsheet_id: str = None, cur
         raise HTTPException(status_code=404, detail=f"No logs found for campaign {campaign_id}")
         
     # Parse starting SNO from campaign ID if present (e.g. CAM002(89-91))
-    import re
     start_sno = None
     range_match = re.search(r"\((\d+)-(\d+)\)", campaign_id)
     if range_match:
