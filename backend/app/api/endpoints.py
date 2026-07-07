@@ -790,6 +790,7 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                     "timestamp": now
                 }
             
+            campaign_recipients = {}
             for row in rows:
                 if len(row) >= 2 and row[0].startswith("CAM"):
                     row_generated_by = row[8] if len(row) > 8 else "System"
@@ -811,8 +812,27 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
                             elif "Unsubscribed" in details_val:
                                 status_val = "Unsubscribed"
                                 
+                            campaign_id_val = row[0]
+                            if campaign_id_val not in campaign_recipients:
+                                start_sno = 1
+                                range_match = re.search(r"\((\d+)-", campaign_id_val)
+                                if range_match:
+                                    try:
+                                        start_sno = int(range_match.group(1))
+                                    except ValueError:
+                                        pass
+                                campaign_recipients[campaign_id_val] = {
+                                    "start_sno": start_sno,
+                                    "counter": 0
+                                }
+                            
+                            state = campaign_recipients[campaign_id_val]
+                            sno_val = str(state["start_sno"] + state["counter"])
+                            state["counter"] += 1
+                            
                             all_results.append({
                                 "campaign_id": row[0],
+                                "sno": sno_val,
                                 "name": name_val,
                                 "company": company_val,
                                 "phone": phone_val if platform_val == "WhatsApp" else None,
@@ -865,6 +885,15 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                 }
             
             results = []
+            start_sno = 1
+            range_match = re.search(r"\((\d+)-", campaign_id)
+            if range_match:
+                try:
+                    start_sno = int(range_match.group(1))
+                except ValueError:
+                    pass
+                    
+            counter = 0
             for row in rows:
                 if len(row) >= 2 and row[0] == campaign_id:
                     row_generated_by = row[8] if len(row) > 8 else "System"
@@ -885,8 +914,12 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                         elif "Unsubscribed" in details_val:
                             status_val = "Unsubscribed"
                             
+                        sno_val = str(start_sno + counter)
+                        counter += 1
+                        
                         results.append({
                             "campaign_id": row[0],
+                            "sno": sno_val,
                             "name": name_val,
                             "company": company_val,
                             "phone": phone_val if platform_val == "WhatsApp" else None,
@@ -1027,8 +1060,26 @@ async def export_custom_logs(req: ExportCustomRequest, current_user: dict = Depe
         raise HTTPException(status_code=400, detail="No logs provided to export.")
 
     export_data = []
+    campaign_states = {}
     for idx, item in enumerate(results, start=1):
-        sno_val = item.get("sno") or str(idx)
+        sno_val = item.get("sno")
+        if not sno_val:
+            campaign_id_val = item.get("campaign_id") or campaign_id
+            if campaign_id_val not in campaign_states:
+                start_sno = 1
+                range_match = re.search(r"\((\d+)-", campaign_id_val)
+                if range_match:
+                    try:
+                        start_sno = int(range_match.group(1))
+                    except ValueError:
+                        pass
+                campaign_states[campaign_id_val] = {
+                    "start_sno": start_sno,
+                    "counter": 0
+                }
+            state = campaign_states[campaign_id_val]
+            sno_val = str(state["start_sno"] + state["counter"])
+            state["counter"] += 1
         
         # Parse and format the Date column to "DD/MM/YYYY Time"
         raw_date = item.get("sent_time", "")

@@ -1869,6 +1869,7 @@ function App() {
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/75">
+                <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">S.No</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Campaign ID</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Recipient</th>
                 <th className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 p-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Company Name</th>
@@ -1888,7 +1889,7 @@ function App() {
             <tbody className="divide-y divide-slate-50">
               {filteredResults.length === 0 ? (
                 <tr>
-                  <td colSpan={user && user.role === 'Admin' ? "12" : "11"} className="py-16 text-center">
+                  <td colSpan={user && user.role === 'Admin' ? "13" : "12"} className="py-16 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
                       {isLoadingLogs ? (
                         <>
@@ -1923,6 +1924,7 @@ function App() {
                     key={idx}
                     className="hover:bg-slate-50/50 transition-colors"
                   >
+                    <td className="p-4 text-xs text-slate-500 font-semibold whitespace-nowrap">{result.sno || "-"}</td>
                     <td className="p-4 text-xs text-slate-500 font-medium whitespace-nowrap">{result.campaign_id || selectedCampaign}</td>
                     <td className="p-4 font-semibold text-slate-700">{result.name}</td>
                     <td className="p-4 text-xs text-slate-600 font-semibold">{result.company || "-"}</td>
