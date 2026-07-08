@@ -829,25 +829,16 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
             print(f"DEBUG: Logs sheet is inaccessible for all campaign status polling: {e}")
             
     # Sort by sent_time descending (newest first)
-    def get_sent_time_key(item):
-        raw_date = item.get("sent_time", "")
-        if not raw_date:
-            return datetime.min
-        date_formats = [
-            "%d %B %Y, %I:%M%p",
-            "%d %B %Y, %I:%M %p",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%d %I:%M:%S %p",
-            "%d %B %Y, %H:%M"
-        ]
-        for date_fmt in date_formats:
-            try:
-                return datetime.strptime(raw_date.strip(), date_fmt)
-            except ValueError:
-                continue
-        return datetime.min
+    # Sort by campaign number descending. Because Python's sort is stable,
+    # the original sheet/in-memory order of rows within each campaign is preserved!
+    def get_campaign_num(item):
+        campaign_id_val = item.get("campaign_id", "")
+        match = re.match(r"CAM(\d+)", campaign_id_val)
+        if match:
+            return int(match.group(1))
+        return 0
 
-    all_results.sort(key=get_sent_time_key, reverse=True)
+    all_results.sort(key=get_campaign_num, reverse=True)
     
     campaign_recipients = {}
     for item in all_results:
@@ -878,25 +869,7 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
         campaign = campaign_manager[campaign_id]
         if is_admin or campaign.get("metadata", {}).get("created_by") == current_user["username"]:
             res_list = list(campaign.get("results", []))
-            # Sort by sent_time descending (newest first)
-            def get_sent_time_key(item):
-                raw_date = item.get("sent_time", "")
-                if not raw_date:
-                    return datetime.min
-                date_formats = [
-                    "%d %B %Y, %I:%M%p",
-                    "%d %B %Y, %I:%M %p",
-                    "%Y-%m-%d %H:%M:%S",
-                    "%Y-%m-%d %I:%M:%S %p",
-                    "%d %B %Y, %H:%M"
-                ]
-                for date_fmt in date_formats:
-                    try:
-                        return datetime.strptime(raw_date.strip(), date_fmt)
-                    except ValueError:
-                        continue
-                return datetime.min
-            res_list.sort(key=get_sent_time_key, reverse=True)
+            # Keep the original in-memory order of results intact and assign S.Nos
             
             # Assign sequential S.Nos after sorting descending
             start_sno = 1
@@ -982,26 +955,7 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
                             "unsub_reason": row[10] if len(row) > 10 else "",
                             "unsub_other": row[11] if len(row) > 11 else ""
                         })
-            # Sort by sent_time descending (newest first)
-            def get_sent_time_key(item):
-                raw_date = item.get("sent_time", "")
-                if not raw_date:
-                    return datetime.min
-                date_formats = [
-                    "%d %B %Y, %I:%M%p",
-                    "%d %B %Y, %I:%M %p",
-                    "%Y-%m-%d %H:%M:%S",
-                    "%Y-%m-%d %I:%M:%S %p",
-                    "%d %B %Y, %H:%M"
-                ]
-                for date_fmt in date_formats:
-                    try:
-                        return datetime.strptime(raw_date.strip(), date_fmt)
-                    except ValueError:
-                        continue
-                return datetime.min
-
-            results.sort(key=get_sent_time_key, reverse=True)
+            # Keep the original spreadsheet order of results intact and assign S.Nos
             
             # Assign S.Nos sequentially to sorted list
             start_sno = 1
