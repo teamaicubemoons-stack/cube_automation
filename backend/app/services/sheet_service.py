@@ -40,12 +40,25 @@ def get_sheets_service():
             print(f"DEBUG: Failed parsing raw JSON from GOOGLE_APPLICATION_CREDENTIALS: {ex}")
 
     if not creds:
-        file_path = env_creds if (env_creds and os.path.exists(env_creds)) else "service_account.json"
-        if os.path.exists(file_path):
-            try:
-                creds = service_account.Credentials.from_service_account_file(file_path, scopes=SCOPES)
-            except Exception as ex:
-                print(f"DEBUG: Failed loading service account file {file_path}: {ex}")
+        # Previous file path check:
+        # file_path = env_creds if (env_creds and os.path.exists(env_creds)) else "service_account.json"
+        
+        # Check candidate file locations (including Render's /etc/secrets/ mount directory)
+        possible_paths = [
+            env_creds if (env_creds and not env_creds.strip().startswith("{")) else None,
+            "service_account.json",
+            "/etc/secrets/service_account.json",
+            "/etc/secrets/service_account",
+            os.path.join(os.path.dirname(__file__), "..", "..", "service_account.json")
+        ]
+        for path in possible_paths:
+            if path and os.path.exists(path):
+                try:
+                    creds = service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
+                    print(f"DEBUG: Loaded Google Service Account credentials from file: {path}")
+                    break
+                except Exception as ex:
+                    print(f"DEBUG: Failed loading service account file {path}: {ex}")
 
     if not creds:
         raise FileNotFoundError(
