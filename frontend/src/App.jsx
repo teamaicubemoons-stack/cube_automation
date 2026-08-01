@@ -3,11 +3,27 @@ import axios from 'axios';
 import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download, Building2, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (
-  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:8000/api'
-    : 'https://api.automation.cubemoons.com/api'
-);
+// Previous API_BASE_URL definition:
+// const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+//   ? 'http://localhost:8000/api'
+//   : 'https://api.automation.cubemoons.com/api';
+
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8000/api';
+  }
+  if (hostname.includes('.onrender.com')) {
+    const backendHost = hostname.replace('frontend', 'backend');
+    return `https://${backendHost}/api`;
+  }
+  return 'https://api.automation.cubemoons.com/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const formatExactDate = (dateStr) => {
   if (!dateStr || dateStr.toLowerCase().includes("pending")) return "Pending";
