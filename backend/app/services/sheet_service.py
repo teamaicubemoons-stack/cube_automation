@@ -131,18 +131,54 @@ async def ensure_headers(spreadsheet_id: str):
             body={'values': [new_headers]}
         ))
 
+_LOGS_TAB_CACHE = {}
+
+async def get_logs_tab_name(spreadsheet_id: str = None) -> str:
+    """
+    Returns 'Logs Data' if it exists in the spreadsheet, otherwise returns 
+    the title of the first sheet tab (e.g., 'Sheet1').
+    Caches the result per spreadsheet ID.
+    """
+    spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
+    if not spreadsheet_id:
+        return "Logs Data"
+        
+    if spreadsheet_id in _LOGS_TAB_CACHE:
+        return _LOGS_TAB_CACHE[spreadsheet_id]
+        
+    try:
+        service = get_sheets_service()
+        spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
+        sheets = spreadsheet.get('sheets', [])
+        sheet_titles = [s.get('properties', {}).get('title') for s in sheets if s.get('properties', {}).get('title')]
+        
+        if "Logs Data" in sheet_titles:
+            res = "Logs Data"
+        elif sheet_titles:
+            res = sheet_titles[0]
+        else:
+            res = "Sheet1"
+            
+        _LOGS_TAB_CACHE[spreadsheet_id] = res
+        return res
+    except Exception as e:
+        print(f"DEBUG: Error resolving logs tab name for {spreadsheet_id}: {e}")
+        return "Sheet1"
+
 async def get_next_campaign_id(spreadsheet_id: str) -> str:
-    """Reads the first column of Logs Data sheet to calculate the next CAM### ID."""
+    """Reads the first column of logs sheet to calculate the next CAM### ID."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
+    sheet_name = await get_logs_tab_name(spreadsheet_id)
     try:
+        # Previous hardcoded tab range: range="Logs Data!A:A"
         result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:A"
+            range=f"{sheet_name}!A:A"
         ))
         values = result.get('values', [])
     except Exception as e:
-        print(f"DEBUG: Error reading Logs Data sheet for Campaign ID: {e}")
+        print(f"DEBUG: Error reading logs sheet for Campaign ID: {e}")
         values = []
     
     # Exclude header row if present
@@ -167,37 +203,17 @@ async def get_next_campaign_id(spreadsheet_id: str) -> str:
     return f"CAM{next_num:03d}"
 
 async def ensure_logs_sheet_headers(spreadsheet_id: str):
-    """Ensures headers are present in the Logs Data sheet (12-column layout)."""
+    """Ensures headers are present in the logs sheet (12-column layout)."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     try:
         service = get_sheets_service()
+        sheet_name = await get_logs_tab_name(spreadsheet_id)
         
-        # Get sheet metadata and titles
-        spreadsheet = await _execute(service.get(spreadsheetId=spreadsheet_id))
-        sheets = spreadsheet.get('sheets', [])
-        sheet_titles = [s.get('properties', {}).get('title') for s in sheets]
-        
-        # Create 'Logs Data' sheet if it doesn't exist
-        if "Logs Data" not in sheet_titles:
-            print("DEBUG: 'Logs Data' sheet tab not found. Creating it...")
-            await _execute(service.batchUpdate(
-                spreadsheetId=spreadsheet_id,
-                body={
-                    "requests": [{
-                        "addSheet": {
-                            "properties": {
-                                "title": "Logs Data"
-                            }
-                        }
-                    }]
-                }
-            ))
-            print("DEBUG: 'Logs Data' sheet tab created successfully.")
-            
         try:
+            # Previous hardcoded tab range: range="Logs Data!A1:L1"
             result = await _execute(service.values().get(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A1:L1"
+                range=f"{sheet_name}!A1:L1"
             ))
             headers = result.get('values', [])
         except Exception:
@@ -214,10 +230,10 @@ async def ensure_logs_sheet_headers(spreadsheet_id: str):
         ]
         
         if not headers or not headers[0]:
-            print("DEBUG: Creating headers in Logs Data sheet...")
+            print(f"DEBUG: Creating headers in {sheet_name} sheet...")
             await _execute(service.values().update(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A1:L1",
+                range=f"{sheet_name}!A1:L1",
                 valueInputOption="RAW",
                 body={'values': [expected_headers]}
             ))
@@ -230,10 +246,10 @@ async def ensure_logs_sheet_headers(spreadsheet_id: str):
             if new_cols:
                 col_letter_start = chr(ord('A') + len(existing))
                 col_letter_end = chr(ord('A') + len(expected_headers) - 1)
-                print(f"DEBUG: Extending Logs Data headers with new columns: {new_cols}")
+                print(f"DEBUG: Extending {sheet_name} headers with new columns: {new_cols}")
                 await _execute(service.values().update(
                     spreadsheetId=spreadsheet_id,
-                    range=f"Logs Data!{col_letter_start}1:{col_letter_end}1",
+                    range=f"{sheet_name}!{col_letter_start}1:{col_letter_end}1",
                     valueInputOption="RAW",
                     body={'values': [new_cols]}
                 ))
@@ -247,14 +263,16 @@ async def check_unsubscribed_emails(spreadsheet_id: str) -> set:
     """
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
+    sheet_name = await get_logs_tab_name(spreadsheet_id)
     try:
+        # Previous hardcoded tab range: range="Logs Data!F:J"
         result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!F:J"
+            range=f"{sheet_name}!F:J"
         ))
         rows = result.get('values', [])
     except Exception as e:
-        print(f"DEBUG: Error reading Logs Data sheet for unsubscribe check: {e}")
+        print(f"DEBUG: Error reading logs sheet for unsubscribe check: {e}")
         return set()
 
     unsubscribed = set()
@@ -282,10 +300,11 @@ async def append_campaign_log(
     company_name: str = "",
     subscription: str = "Yes"
 ):
-    """Appends a campaign log entry to the Logs Data sheet (12-column layout)."""
+    """Appends a campaign log entry to the logs sheet (12-column layout)."""
     from datetime import datetime
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
+    sheet_name = await get_logs_tab_name(spreadsheet_id)
     # Format: "27 June 2026, 03:23PM"  (cross-platform: strip leading zero from day)
     _now = datetime.now()
     timestamp = f"{_now.day} {_now.strftime('%B %Y, %I:%M%p')}"
@@ -300,29 +319,32 @@ async def append_campaign_log(
     ]
     
     try:
+        # Previous hardcoded tab range: range="Logs Data!A:L"
         await _execute(service.values().append(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:L",
+            range=f"{sheet_name}!A:L",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [row_data]}
         ))
-        print(f"DEBUG: Appended log row for {name} ({platform}) to Logs Data sheet")
+        print(f"DEBUG: Appended log row for {name} ({platform}) to {sheet_name} sheet")
     except Exception as e:
-        print(f"DEBUG: Failed to append campaign log to Logs Data sheet: {e}")
+        print(f"DEBUG: Failed to append campaign log to {sheet_name} sheet: {e}")
 
 async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, status: str, details: str):
-    """Updates the details column for a specific campaign ID and email in Logs Data."""
+    """Updates the details column for a specific campaign ID and email in logs sheet."""
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
+    sheet_name = await get_logs_tab_name(spreadsheet_id)
     try:
+        # Previous hardcoded tab range: range="Logs Data!A:F"
         result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:F"
+            range=f"{sheet_name}!A:F"
         ))
         rows = result.get('values', [])
     except Exception as e:
-        print(f"DEBUG: Error reading Logs Data sheet for status update: {e}")
+        print(f"DEBUG: Error reading logs sheet for status update: {e}")
         return
     
     for idx, row in enumerate(rows):
@@ -336,7 +358,7 @@ async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, s
             if row_campaign_id == campaign_id and row_platform == "Email" and row_email == email:
                 row_num = idx + 1
                 # Column H is index 7 (Details column)
-                range_name = f"Logs Data!H{row_num}"
+                range_name = f"{sheet_name}!H{row_num}"
                 body = {'values': [[details]]}
                 await _execute(service.values().update(
                     spreadsheetId=spreadsheet_id,
@@ -344,7 +366,7 @@ async def update_log_status(spreadsheet_id: str, campaign_id: str, email: str, s
                     valueInputOption="RAW",
                     body=body
                 ))
-                print(f"DEBUG: Updated Logs Data sheet row {row_num} status to {status}")
+                print(f"DEBUG: Updated logs sheet row {row_num} status to {status}")
                 break
 
 async def update_unsubscribe_status(
@@ -355,21 +377,23 @@ async def update_unsubscribe_status(
     other_reason: str = ""
 ):
     """
-    Updates the Unsubscribe columns (J, K, L) in Logs Data sheet for a given email+campaign.
+    Updates the Unsubscribe columns (J, K, L) in logs sheet for a given email+campaign.
     J = Subscription (Yes / No) → set to "No"
     K = Unsubscribe Reason → reason text
     L = If Other (Reason) → other_reason if reason is Others
     """
     spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
     service = get_sheets_service()
+    sheet_name = await get_logs_tab_name(spreadsheet_id)
     try:
+        # Previous hardcoded tab range: range="Logs Data!A:F"
         result = await _execute(service.values().get(
             spreadsheetId=spreadsheet_id,
-            range="Logs Data!A:F"
+            range=f"{sheet_name}!A:F"
         ))
         rows = result.get('values', [])
     except Exception as e:
-        print(f"DEBUG: Error reading Logs Data sheet for unsubscribe update: {e}")
+        print(f"DEBUG: Error reading logs sheet for unsubscribe update: {e}")
         return False
 
     updated = False
@@ -388,7 +412,7 @@ async def update_unsubscribe_status(
             if email_match and campaign_match and row_platform == "Email":
                 row_num = idx + 1
                 # Columns J, K, L = indices 9, 10, 11 → letters J, K, L
-                range_name = f"Logs Data!J{row_num}:L{row_num}"
+                range_name = f"{sheet_name}!J{row_num}:L{row_num}"
                 body = {'values': [["No", reason, other_reason]]}
                 await _execute(service.values().update(
                     spreadsheetId=spreadsheet_id,

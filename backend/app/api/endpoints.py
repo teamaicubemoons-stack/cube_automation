@@ -18,7 +18,8 @@ from app.services.sheet_service import (
     update_log_status,
     update_unsubscribe_status,
     read_users_data,
-    check_unsubscribed_emails
+    check_unsubscribed_emails,
+    get_logs_tab_name
 )
 
 router = APIRouter()
@@ -632,11 +633,13 @@ async def get_emails_sent_today(spreadsheet_id: str = None, current_user: dict =
     
     if spreadsheet_id:
         try:
-            from app.services.sheet_service import get_sheets_service
+            from app.services.sheet_service import get_sheets_service, get_logs_tab_name
             service = get_sheets_service()
+            sheet_name = await get_logs_tab_name(spreadsheet_id)
+            # Previous: range="Logs Data!A:H"
             result = await asyncio.to_thread(service.values().get(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A:H"
+                range=f"{sheet_name}!A:H"
             ).execute)
             rows = result.get('values', [])
             
@@ -713,11 +716,13 @@ async def list_campaigns(spreadsheet_id: str = None, current_user: dict = Depend
     # 2. Filter historical campaigns from sheet
     if spreadsheet_id:
         try:
-            from app.services.sheet_service import get_sheets_service
+            from app.services.sheet_service import get_sheets_service, get_logs_tab_name
             service = get_sheets_service()
+            sheet_name = await get_logs_tab_name(spreadsheet_id)
+            # Previous: range="Logs Data!A:L"
             result = await asyncio.to_thread(service.values().get(
                 spreadsheetId=spreadsheet_id,
-                range="Logs Data!A:L"
+                range=f"{sheet_name}!A:L"
             ).execute)
             values = result.get('values', [])
             for row in values:
@@ -778,10 +783,13 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
             if cached and (now - cached["timestamp"] < CACHE_EXPIRY_SECONDS):
                 rows = cached["rows"]
             else:
+                from app.services.sheet_service import get_sheets_service, get_logs_tab_name
                 service = get_sheets_service()
+                sheet_name = await get_logs_tab_name(spreadsheet_id)
+                # Previous: range="Logs Data!A:L"
                 result = await asyncio.to_thread(service.values().get(
                     spreadsheetId=spreadsheet_id,
-                    range="Logs Data!A:L"
+                    range=f"{sheet_name}!A:L"
                 ).execute)
                 rows = result.get('values', [])
                 SHEETS_LOGS_CACHE[spreadsheet_id] = {
@@ -896,10 +904,12 @@ async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, curr
             if cached and (now - cached["timestamp"] < CACHE_EXPIRY_SECONDS):
                 rows = cached["rows"]
             else:
+                from app.services.sheet_service import get_sheets_service, get_logs_tab_name
                 service = get_sheets_service()
+                sheet_name = await get_logs_tab_name(spreadsheet_id)
                 result = await asyncio.to_thread(service.values().get(
                     spreadsheetId=spreadsheet_id,
-                    range="Logs Data!A:L"
+                    range=f"{sheet_name}!A:L"
                 ).execute)
                 rows = result.get('values', [])
                 SHEETS_LOGS_CACHE[spreadsheet_id] = {
