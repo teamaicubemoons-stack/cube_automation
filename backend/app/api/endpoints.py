@@ -869,6 +869,42 @@ async def get_all_campaigns_status(spreadsheet_id: str = None, current_user: dic
     return all_results
 
 
+@router.get("/campaign/emails-sent-today")
+async def get_emails_sent_today(spreadsheet_id: str = None, current_user: dict = Depends(get_current_user)):
+    """Returns total emails sent today from campaign logs."""
+    from datetime import datetime
+    today_str = datetime.now().strftime("%d %B %Y")
+    count = 0
+    
+    # Count from in-memory campaigns
+    for campaign in campaign_manager.values():
+        for res in campaign.get("results", []):
+            if res.get("type") == "Email" and today_str in str(res.get("sent_time", "")):
+                count += 1
+                
+    # Also count from Google Sheets if available
+    spreadsheet_id = os.getenv("LOGS_SPREADSHEET_ID") or spreadsheet_id
+    if spreadsheet_id:
+        try:
+            from app.services.sheet_service import get_sheets_service, get_logs_tab_name
+            service = get_sheets_service()
+            sheet_name = await get_logs_tab_name(spreadsheet_id)
+            result = await asyncio.to_thread(service.values().get(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!A:L"
+            ).execute)
+            rows = result.get('values', [])
+            sheet_count = 0
+            for row in rows:
+                if len(row) >= 7 and row[1] == "Email" and today_str in row[6]:
+                    sheet_count += 1
+            count = max(count, sheet_count)
+        except Exception as e:
+            print(f"DEBUG: Failed to read emails sent today from sheets: {e}")
+
+    return {"emails_sent_today": count}
+
+
 @router.get("/campaign/{campaign_id}/status")
 async def get_campaign_status(campaign_id: str, spreadsheet_id: str = None, current_user: dict = Depends(get_current_user)):
     """Returns log entries for a specific campaign ID, scoped to current user, falling back to Google Sheets."""

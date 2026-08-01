@@ -453,9 +453,15 @@ function App() {
         const response = await axios.get(endpoint, { timeout: 10000 });
         setCampaignResults(response.data);
 
-        // Fetch daily emails sent count
-        const countResponse = await axios.get(`${API_BASE_URL}/campaign/emails-sent-today${spreadsheetParam}`, { timeout: 10000 });
-        setEmailsSentToday(countResponse.data.emails_sent_today);
+        // Fetch daily emails sent count safely
+        try {
+          const countResponse = await axios.get(`${API_BASE_URL}/campaign/emails-sent-today${spreadsheetParam}`, { timeout: 10000 });
+          if (countResponse.data && typeof countResponse.data.emails_sent_today === 'number') {
+            setEmailsSentToday(countResponse.data.emails_sent_today);
+          }
+        } catch (cntErr) {
+          console.error("Daily count fetch failed", cntErr);
+        }
       } catch (error) {
         console.error("Status polling failed", error);
       } finally {
