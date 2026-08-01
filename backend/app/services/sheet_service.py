@@ -11,12 +11,48 @@ SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_acco
 SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
 def get_sheets_service():
-    if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        raise FileNotFoundError(f"{SERVICE_ACCOUNT_FILE} not found. Please follow the setup guide.")
+    # Previous implementation:
+    # if not os.path.exists(SERVICE_ACCOUNT_FILE):
+    #     raise FileNotFoundError(f"{SERVICE_ACCOUNT_FILE} not found. Please follow the setup guide.")
+    # creds = service_account.Credentials.from_service_account_file(
+    #     SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    # print(f"DEBUG: Using Service Account: {creds.service_account_email}")
+    # service = build('sheets', 'v4', credentials=creds)
+    # return service.spreadsheets()
+
+    import json
+    creds = None
+    env_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    json_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
     
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    print(f"DEBUG: Using Service Account: {creds.service_account_email}")
+    if json_env:
+        try:
+            info = json.loads(json_env)
+            creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        except Exception as ex:
+            print(f"DEBUG: Failed parsing GOOGLE_APPLICATION_CREDENTIALS_JSON: {ex}")
+            
+    if not creds and env_creds.strip().startswith("{"):
+        try:
+            info = json.loads(env_creds)
+            creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        except Exception as ex:
+            print(f"DEBUG: Failed parsing raw JSON from GOOGLE_APPLICATION_CREDENTIALS: {ex}")
+
+    if not creds:
+        file_path = env_creds if (env_creds and os.path.exists(env_creds)) else "service_account.json"
+        if os.path.exists(file_path):
+            try:
+                creds = service_account.Credentials.from_service_account_file(file_path, scopes=SCOPES)
+            except Exception as ex:
+                print(f"DEBUG: Failed loading service account file {file_path}: {ex}")
+
+    if not creds:
+        raise FileNotFoundError(
+            "Google Service Account Credentials not found! Please place 'service_account.json' "
+            "in the backend directory or set GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable in Render."
+        )
+
     service = build('sheets', 'v4', credentials=creds)
     return service.spreadsheets()
 
