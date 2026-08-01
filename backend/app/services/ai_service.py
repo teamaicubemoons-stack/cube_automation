@@ -4,12 +4,25 @@ import openai
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def get_openai_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        return openai.OpenAI(api_key=api_key)
+    except Exception as e:
+        print(f"DEBUG: Failed to initialize OpenAI client: {e}")
+        return None
 
 async def detect_columns(columns: list, sample_rows: list):
     """
     Identifies phone, email, name, and company columns from dataset headers.
     """
+    client = get_openai_client()
+    if not client:
+        print("AI Detection Warning: OPENAI_API_KEY is missing or invalid.")
+        return {"phone": "", "email": "", "name": "", "company": ""}
+
     prompt = f"""
     Given the following dataset columns and sample data, identify which column represents:
     1. phone (the primary mobile/phone number)
@@ -40,6 +53,11 @@ async def rewrite_message(message: str, tone: str = "professional"):
     """
     Rewrites a message using AI to match a specific tone.
     """
+    client = get_openai_client()
+    if not client:
+        print("AI Rewriting Warning: OPENAI_API_KEY is missing or invalid.")
+        return message
+
     prompt = f"Rewrite this message to be more {tone}: \"{message}\". Keep it concise and suitable for WhatsApp/Email."
     
     try:
