@@ -10,7 +10,13 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
 SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
+_SHEETS_SERVICE_CACHE = None
+
 def get_sheets_service():
+    global _SHEETS_SERVICE_CACHE
+    if _SHEETS_SERVICE_CACHE is not None:
+        return _SHEETS_SERVICE_CACHE
+
     # Previous implementation:
     # if not os.path.exists(SERVICE_ACCOUNT_FILE):
     #     raise FileNotFoundError(f"{SERVICE_ACCOUNT_FILE} not found. Please follow the setup guide.")
@@ -66,8 +72,13 @@ def get_sheets_service():
             "in the backend directory or set GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable in Render."
         )
 
+    # Previous non-cached initialization:
+    # service = build('sheets', 'v4', credentials=creds)
+    # return service.spreadsheets()
+
     service = build('sheets', 'v4', credentials=creds)
-    return service.spreadsheets()
+    _SHEETS_SERVICE_CACHE = service.spreadsheets()
+    return _SHEETS_SERVICE_CACHE
 
 async def _execute(request):
     return await asyncio.to_thread(request.execute)
