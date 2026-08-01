@@ -3,9 +3,11 @@ import axios from 'axios';
 import { Upload, Send, MessageSquare, Mail, CheckCircle, AlertCircle, Loader2, Wand2, Eye, EyeOff, Phone, User, Layers, ChevronDown, Sparkles, Calendar, X, Lock, LogOut, Plus, Trash2, Edit, ArrowLeft, Download, Building2, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:8000/api'
-  : 'https://api.automation.cubemoons.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000/api'
+    : 'https://api.automation.cubemoons.com/api'
+);
 
 const formatExactDate = (dateStr) => {
   if (!dateStr || dateStr.toLowerCase().includes("pending")) return "Pending";
