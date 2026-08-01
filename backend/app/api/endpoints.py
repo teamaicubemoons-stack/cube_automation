@@ -31,6 +31,50 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+import hmac
+import hashlib
+import base64
+import time
+
+SECRET_KEY = os.getenv("SECRET_KEY", "cube_automation_secret_key_2026_x99")
+
+def create_access_token(username: str, role: str) -> str:
+    payload = f"{username}|{role}|{int(time.time())}"
+    signature = hmac.new(SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    raw = f"{payload}|{signature}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+def decode_access_token(token: str) -> dict:
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        parts = raw.split("|")
+        if len(parts) != 4:
+            return None
+        username, role, ts_str, sig = parts
+        expected_sig = hmac.new(SECRET_KEY.encode(), f"{username}|{role}|{ts_str}".encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        if time.time() - int(ts_str) > 30 * 86400:  # 30 days valid
+            return None
+        return {"username": username, "role": role}
+    except Exception:
+        return None
+
+# Previous get_current_user implementation:
+# async def get_current_user(authorization: str = Header(None)) -> dict:
+#     if not authorization or not authorization.startswith("Bearer "):
+#         raise HTTPException(
+#             status_code=401,
+#             detail="Unauthorized: Missing or invalid Authorization header token."
+#         )
+#     token = authorization.split(" ")[1]
+#     if token not in ACTIVE_SESSIONS:
+#         raise HTTPException(
+#             status_code=401,
+#             detail="Unauthorized: Session expired or invalid token."
+#         )
+#     return ACTIVE_SESSIONS[token]
+
 async def get_current_user(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -38,12 +82,18 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
             detail="Unauthorized: Missing or invalid Authorization header token."
         )
     token = authorization.split(" ")[1]
-    if token not in ACTIVE_SESSIONS:
-        raise HTTPException(
-            status_code=401,
-            detail="Unauthorized: Session expired or invalid token."
-        )
-    return ACTIVE_SESSIONS[token]
+    
+    user_data = decode_access_token(token)
+    if user_data:
+        return user_data
+        
+    if token in ACTIVE_SESSIONS:
+        return ACTIVE_SESSIONS[token]
+        
+    raise HTTPException(
+        status_code=401,
+        detail="Unauthorized: Session expired or invalid token."
+    )
 
 @router.post("/login")
 async def login(req: LoginRequest):
@@ -64,7 +114,6 @@ async def login(req: LoginRequest):
             res_data = response.json()
             if res_data.get("status") is True:
                 # Successfully logged in via external database!
-                token = res_data.get("access_token") or str(uuid.uuid4())
                 user_obj = res_data.get("user") or {}
                 username_val = user_obj.get("name") or req.username.strip()
                 ext_roles = res_data.get("roles") or []
@@ -76,6 +125,7 @@ async def login(req: LoginRequest):
                     else:
                         role_val = first_role_name
                 
+                token = create_access_token(username_val, role_val)
                 ACTIVE_SESSIONS[token] = {"username": username_val, "role": role_val}
                 return {
                     "token": token,
@@ -134,8 +184,8 @@ async def _attempt_sheet_login_fallback(username: str, password: str):
                     sheet_role = row[role_idx].strip() if len(row) > role_idx else "User"
                     
                     if sheet_user.lower() == username.strip().lower() and sheet_pass == password.strip():
-                        token = str(uuid.uuid4())
                         role_val = "Admin" if "admin" in sheet_role.lower() else "User"
+                        token = create_access_token(sheet_user, role_val)
                         ACTIVE_SESSIONS[token] = {"username": sheet_user, "role": role_val}
                         print(f"DEBUG: Local sheet login fallback SUCCESS for user: {sheet_user}")
                         return {
