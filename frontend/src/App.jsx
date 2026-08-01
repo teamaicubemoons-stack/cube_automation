@@ -20,6 +20,9 @@ const getApiBaseUrl = () => {
     const backendHost = hostname.replace('frontend', 'backend');
     return `https://${backendHost}/api`;
   }
+  if (hostname.includes('.netlify.app')) {
+    return 'https://cube-backend-testing.onrender.com/api';
+  }
   return 'https://api.automation.cubemoons.com/api';
 };
 
