@@ -354,6 +354,33 @@ function App() {
     }
   }, [toast]);
 
+  // Keep axios Authorization header synced with user token
+  useEffect(() => {
+    if (user && user.token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${user.token}`;
+    } else {
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  }, [user]);
+
+  // Handle 401 Unauthorized globally (auto logout on expired/invalid token)
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      response => response,
+      error => {
+        if (error.response && error.response.status === 401) {
+          setUser(null);
+          localStorage.removeItem('cube_campaign_user');
+          delete axios.defaults.headers.common['Authorization'];
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!loginUsername.trim() || !loginPassword.trim()) {
